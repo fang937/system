@@ -49,7 +49,7 @@ public class MetaController {
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("round", round);
         return R.ok(jdbc.queryForList("""
-                SELECT t.id AS tutorId, u.name AS tutorName, t.title, t.research_direction AS researchDirection,
+                SELECT t.id AS tutorId, t.user_id AS userId, u.name AS tutorName, t.title, t.research_direction AS researchDirection,
                        t.intro, t.quota, t.remaining_quota AS remainingQuota,
                        l.id AS labId, l.name AS labName, l.description AS labDescription,
                        (SELECT COUNT(*) FROM applications a

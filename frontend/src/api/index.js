@@ -157,6 +157,11 @@ export const api = {
   aiProviders: () => http.get('/ai/providers'),
   aiActivateProvider: (name) => http.post(`/ai/providers/${name}/activate`),
 
+  // 师生直连私信（学生 ↔ 导师/负责人）
+  messageThreads: () => http.get('/messages/threads'),
+  messageConversation: (userId) => http.get(`/messages/with/${userId}`),
+  messageSend: (userId, content) => http.post(`/messages/with/${userId}`, { content }),
+
   // 多维评分（按 score_rubrics 权重折算总分）
   saveScores: (applicationId, items) => http.post(`/workbench/applicants/${applicationId}/scores`, { items })
 }

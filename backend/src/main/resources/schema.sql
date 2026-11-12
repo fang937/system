@@ -336,3 +336,19 @@ CREATE TABLE IF NOT EXISTS resume_texts (
   updated_at DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (resume_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='简历正文抽取缓存';
+
+-- 师生直连私信：学生可直接联系任意导师/负责人，导师在线回复。
+-- 与 notifications 的区别：通知是单向系统广播，这里是双向会话，有已读语义与历史。
+CREATE TABLE IF NOT EXISTS direct_messages (
+  id          BIGINT        NOT NULL AUTO_INCREMENT,
+  sender_id   BIGINT        NOT NULL COMMENT 'users.id，取自登录身份',
+  receiver_id BIGINT        NOT NULL COMMENT 'users.id',
+  content     VARCHAR(1000) NOT NULL,
+  is_read     TINYINT       NOT NULL DEFAULT 0 COMMENT '0未读 1已读（相对收件人）',
+  created_at  DATETIME      DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_dm_receiver_unread (receiver_id, is_read),
+  KEY idx_dm_pair_sender (sender_id, receiver_id),
+  KEY idx_dm_pair_receiver (receiver_id, sender_id),
+  KEY idx_dm_time (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='师生直连私信';

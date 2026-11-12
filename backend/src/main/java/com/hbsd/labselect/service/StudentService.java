@@ -38,6 +38,7 @@ public class StudentService {
         int round = phaseService.currentRound();
         String sql = """
                 SELECT t.id                        AS tutorId,
+                       t.user_id                   AS userId,
                        u.name                      AS tutorName,
                        t.title                     AS title,
                        t.research_direction        AS researchDirection,

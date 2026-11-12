@@ -34,6 +34,7 @@ const routes = [
       { path: 'admin/report', component: () => import('../views/admin/Report.vue'), meta: { caps: ['ADMIN'], title: '结果公示' } },
 
       // 三端共用
+      { path: 'messages', component: () => import('../views/workbench/Messages.vue'), meta: { caps: ['STUDENT', 'TUTOR_WORK'], title: '私信' } },
       { path: 'notifications', component: () => import('../views/Notifications.vue'), meta: { title: '消息通知' } }
     ]
   },

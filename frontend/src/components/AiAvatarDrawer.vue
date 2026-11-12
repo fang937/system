@@ -5,10 +5,26 @@
 
       <section class="avatar-sheet" role="dialog" aria-label="导师 AI 分身">
         <header class="sheet-head">
-          <div class="ai-mark">AI</div>
+          <div class="ai-mark" :class="{ human: mode === 'direct' }">{{ mode === 'ai' ? 'AI' : '直' }}</div>
           <div class="who">
-            <div class="who-name">{{ displayName }}</div>
-            <div class="who-sub">{{ tutor?.labName }} · {{ tutor?.researchDirection }}</div>
+            <div class="who-name">{{ mode === 'ai' ? displayName : `${tutor?.tutorName || '导师'}老师` }}</div>
+            <div class="who-sub">
+              {{ tutor?.labName }} · {{ mode === 'ai' ? tutor?.researchDirection : '直接留言，老师登录后可见并回复' }}
+            </div>
+          </div>
+          <div class="mode-switch" role="tablist" aria-label="沟通方式">
+            <button type="button" role="tab" :aria-selected="mode === 'ai'" :class="{ active: mode === 'ai' }" @click="switchMode('ai')">
+              AI 分身
+            </button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="mode === 'direct'"
+              :class="{ active: mode === 'direct' }"
+              @click="switchMode('direct')"
+            >
+              直接留言
+            </button>
           </div>
           <button class="sheet-close" type="button" aria-label="关闭" @click="close">
             <el-icon :size="17"><Close /></el-icon>
@@ -16,18 +32,19 @@
         </header>
 
         <div ref="scroller" class="bubbles">
-          <div v-for="(message, index) in messages" :key="index" class="bubble" :class="message.role">
+          <div v-for="(message, index) in activeMessages" :key="index" class="bubble" :class="message.mine ? 'student' : 'assistant'">
             <div class="bubble-text">{{ message.content }}</div>
             <div v-if="message.citations && message.citations.length" class="bubble-cite">
               依据：{{ message.citations.join('；') }}
             </div>
+            <div v-if="message.time" class="bubble-time">{{ message.time }}</div>
           </div>
-          <div v-if="sending" class="bubble assistant">
+          <div v-if="sending || directLoading" class="bubble assistant">
             <span class="ai-dots"><i /><i /><i /></span>
           </div>
         </div>
 
-        <div class="quick">
+        <div v-if="mode === 'ai'" class="quick">
           <button v-for="item in quickQuestions" :key="item" type="button" @click="ask(item)">
             {{ item }}
           </button>
@@ -43,17 +60,17 @@
             v-model="draft"
             class="composer-input"
             type="text"
-            placeholder="问问方向、项目要求、面试准备…"
+            :placeholder="mode === 'ai' ? '问问方向、项目要求、面试准备…' : '直接给老师留言，回车发送…'"
             @keyup.enter="send()"
           />
-          <button class="composer-send" type="button" :disabled="!draft.trim() || sending" @click="send()">
+          <button class="composer-send" type="button" :disabled="!draft.trim() || sending || directSending" @click="send()">
             发送
           </button>
         </footer>
 
         <p class="sheet-note">
-          {{ boundary }}
-          <span v-if="placeholder" class="placeholder-tag">规则引擎预览</span>
+          {{ mode === 'ai' ? boundary : '这里是你和老师的私聊，消息仅双方可见；老师不在线时留言即可。' }}
+          <span v-if="mode === 'ai' && placeholder" class="placeholder-tag">规则引擎预览</span>
         </p>
       </section>
     </div>
@@ -78,15 +95,41 @@ const placeholder = ref(false)
 const errorMsg = ref('')
 const scroller = ref(null)
 
+// 师生直连：模式 ai=AI 分身（秒回） / direct=真实私信（老师回复）
+const mode = ref('ai')
+const directMessages = ref([])
+const directLoading = ref(false)
+const directSending = ref(false)
+
 const quickQuestions = ['方向主要做什么？', '需要提前准备什么？', '面试会考察哪些方面？', '还有名额吗？']
 
 const displayName = computed(() => props.tutor?.displayName || `${props.tutor?.tutorName || '导师'}老师助手`)
+
+const activeMessages = computed(() =>
+  mode.value === 'ai'
+    ? messages.value.map((m) => ({
+        mine: m.role === 'student',
+        content: m.content,
+        citations: m.citations,
+        time: ''
+      }))
+    : directMessages.value.map((m) => ({
+        mine: Number(m.mine) === 1,
+        content: m.content,
+        citations: [],
+        time: m.createdAt ? String(m.createdAt).slice(5, 16) : ''
+      }))
+)
 
 watch(
   () => props.modelValue,
   async (open) => {
     document.body.style.overflow = open ? 'hidden' : ''
     if (!open) return
+    if (mode.value === 'direct') {
+      await loadDirect()
+      return
+    }
     if (!messages.value.length) {
       messages.value = [
         {
@@ -112,12 +155,49 @@ function scrollToEnd() {
   if (el) el.scrollTop = el.scrollHeight
 }
 
+/** 切换沟通方式；进入直接留言时拉取真实会话。 */
+async function switchMode(next) {
+  if (mode.value === next) return
+  mode.value = next
+  errorMsg.value = ''
+  if (next === 'direct') {
+    await loadDirect()
+  } else {
+    await nextTick()
+    scrollToEnd()
+  }
+}
+
+async function loadDirect() {
+  const userId = props.tutor?.userId
+  if (!userId) {
+    errorMsg.value = '缺少老师账号信息，无法建立会话'
+    return
+  }
+  directLoading.value = true
+  errorMsg.value = ''
+  try {
+    const res = await api.messageConversation(userId)
+    directMessages.value = res?.messages || []
+  } catch (error) {
+    errorMsg.value = `会话加载失败：${error.message}`
+  } finally {
+    directLoading.value = false
+    await nextTick()
+    scrollToEnd()
+  }
+}
+
 function ask(text) {
   draft.value = text
   send()
 }
 
 async function send() {
+  if (mode.value === 'direct') {
+    await sendDirect()
+    return
+  }
   const question = draft.value.trim()
   if (!question || sending.value || !props.tutor?.tutorId) return
   messages.value.push({ role: 'student', content: question })
@@ -149,6 +229,26 @@ async function send() {
     sending.value = false
     await nextTick()
     scrollToEnd()
+  }
+}
+
+/** 直接留言：走真实私信接口，消息落库，老师登录后可见并回复。 */
+async function sendDirect() {
+  const text = draft.value.trim()
+  const userId = props.tutor?.userId
+  if (!text || directSending.value || !userId) return
+  directSending.value = true
+  errorMsg.value = ''
+  try {
+    const sent = await api.messageSend(userId, text)
+    directMessages.value.push(sent || { mine: 1, content: text, createdAt: '' })
+    draft.value = ''
+    await nextTick()
+    scrollToEnd()
+  } catch (error) {
+    errorMsg.value = `发送失败：${error.message}`
+  } finally {
+    directSending.value = false
   }
 }
 </script>
@@ -432,5 +532,51 @@ async function send() {
   .avatar-sheet {
     width: 100%;
   }
+}
+
+/* ---- 沟通方式切换（AI 分身 / 直接留言）---- */
+.mode-switch {
+  display: flex;
+  flex: none;
+  padding: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--fill-1);
+  margin-left: 2px;
+}
+
+.mode-switch button {
+  border: none;
+  background: transparent;
+  padding: 5px 10px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-ios);
+  font-size: 11px;
+  color: var(--label-2);
+  cursor: pointer;
+  transition: background-color 0.2s var(--ease-ios), color 0.2s var(--ease-ios);
+  white-space: nowrap;
+}
+
+.mode-switch button.active {
+  background: var(--surface);
+  color: #4b49b8;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.ai-mark.human {
+  background: linear-gradient(150deg, #34c759, #30b0c7);
+  box-shadow: 0 4px 12px rgba(52, 199, 89, 0.26);
+}
+
+.bubble-time {
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--label-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.bubble.student .bubble-time {
+  text-align: right;
 }
 </style>

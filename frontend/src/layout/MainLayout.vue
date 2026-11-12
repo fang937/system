@@ -135,7 +135,8 @@ const MENUS = [
       { path: '/student/application', label: '我的志愿', icon: 'EditPen' },
       { path: '/student/resume', label: '我的简历', icon: 'Document' },
       { path: '/student/offers', label: '我的 Offer', icon: 'Tickets' },
-      { path: '/student/result', label: '录取结果', icon: 'Medal' }
+      { path: '/student/result', label: '录取结果', icon: 'Medal' },
+      { path: '/messages', label: '私信', icon: 'ChatDotRound' }
     ]
   },
   {
@@ -144,7 +145,8 @@ const MENUS = [
     tone: 'indigo',
     items: [
       { path: '/workbench/applicants', label: '报考我的学生', icon: 'UserFilled' },
-      { path: '/workbench/offers', label: '我的录取', icon: 'DocumentChecked' }
+      { path: '/workbench/offers', label: '我的录取', icon: 'DocumentChecked' },
+      { path: '/messages', label: '学生留言', icon: 'ChatDotRound' }
     ]
   },
   {
