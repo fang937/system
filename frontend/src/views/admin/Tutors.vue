@@ -12,14 +12,14 @@
       <el-tabs v-model="tab">
         <el-tab-pane label="导师" name="tutors">
           <el-table v-loading="loading" :data="tutors" stripe>
-            <el-table-column label="导师" min-width="150">
+            <el-table-column label="导师" min-width="128">
               <template #default="{ row }">
                 <div class="cell-name">{{ row.tutorName }}</div>
                 <div class="tiny">{{ row.username }}</div>
               </template>
             </el-table-column>
-            <el-table-column prop="labName" label="实训室" min-width="150" />
-            <el-table-column label="职位" width="110" align="center">
+            <el-table-column prop="labName" label="实训室" min-width="118" />
+            <el-table-column label="职位" width="96" align="center">
               <template #default="{ row }">
                 <el-tag
                   size="small"
@@ -30,22 +30,22 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="title" label="职称" width="90" />
-            <el-table-column prop="researchDirection" label="方向" min-width="150" show-overflow-tooltip />
-            <el-table-column label="名额" width="120" align="center">
+            <el-table-column prop="title" label="职称" width="82" show-overflow-tooltip />
+            <el-table-column prop="researchDirection" label="方向" min-width="128" show-overflow-tooltip />
+            <el-table-column label="名额" width="104" align="center">
               <template #default="{ row }">
                 <span class="mono">{{ row.quota - row.remainingQuota }}/{{ row.quota }}</span>
                 <div class="tiny">报考 {{ row.applicantCount }}</div>
               </template>
             </el-table-column>
-            <el-table-column label="状态" width="90" align="center">
+            <el-table-column label="状态" width="78" align="center">
               <template #default="{ row }">
                 <el-tag size="small" :type="row.status === 1 ? 'success' : 'info'" effect="plain">
                   {{ row.status === 1 ? '招生中' : '已停用' }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="230" align="right">
+            <el-table-column label="操作" width="196" align="right" fixed="right">
               <template #default="{ row }">
                 <el-button size="small" text type="primary" @click="openTutor(row)">编辑</el-button>
                 <el-button

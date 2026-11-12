@@ -523,4 +523,11 @@ onMounted(async () => {
   text-align: right;
   line-height: 1.2;
 }
+
+/* 窄窗口：概览卡片降为单列，避免每卡被压得过窄 */
+@media (max-width: 700px) {
+  .lab-cards {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

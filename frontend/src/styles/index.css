@@ -218,6 +218,7 @@ a {
   flex-direction: column;
   gap: 18px;
   padding-bottom: 8px;
+  min-width: 0;
 }
 
 .page-head {
@@ -225,6 +226,7 @@ a {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .page-head h2 {
