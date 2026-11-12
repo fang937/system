@@ -155,11 +155,31 @@ const demoAccounts = {
     { role: '学生（已填志愿）', username: '2023002', name: '陈子昂' }
   ],
   TUTOR: [
-    { role: '202 实训室负责人 · 刘冠军', username: 'liuguanjun', name: '刘冠军' },
-    { role: '204 实训室负责人 · 胡国欣', username: 'huguoxin', name: '胡国欣' },
-    { role: '404 实训室导师 · 张会斌', username: 'zhanghuibin', name: '张会斌' },
-    { role: '406 实训室负责人 · 杨振樱', username: 'yangzhenying', name: '杨振樱' },
-    { role: '505 实训室负责人 · 王浩', username: 'wanghao', name: '王浩' }
+    { role: '202 负责人', username: 'liuguanjun', name: '刘冠军' },
+    { role: '202 讲师', username: 'wangyanhua', name: '王艳华' },
+    { role: '202 讲师', username: 'changlingling', name: '常玲玲' },
+    { role: '202 讲师', username: 'fanjiahao', name: '范佳浩' },
+    { role: '204 负责人', username: 'huguoxin', name: '胡国欣' },
+    { role: '204 讲师', username: 'wangwei', name: '王伟' },
+    { role: '204 讲师', username: 'lihuanzhen', name: '李焕贞' },
+    { role: '402 负责人', username: 'jiahaitao', name: '贾海涛' },
+    { role: '402 讲师', username: 'pingyuxuan', name: '平宇轩' },
+    { role: '402 讲师', username: 'zhangxiang', name: '张翔' },
+    { role: '402 讲师', username: 'wangxiaolong', name: '王晓龙' },
+    { role: '404 负责人', username: 'gaoxuan', name: '高璇' },
+    { role: '404 讲师', username: 'wangpengfan', name: '王鹏帆' },
+    { role: '404 讲师', username: 'zhanghuibin', name: '张会斌' },
+    { role: '404 讲师', username: 'wangfengpei', name: '王凤佩' },
+    { role: '404 讲师', username: 'xuruize', name: '徐瑞泽' },
+    { role: '406 负责人', username: 'yangzhenying', name: '杨振樱' },
+    { role: '406 讲师', username: 'daiyifan', name: '代一凡' },
+    { role: '406 讲师', username: 'maqingyu', name: '马庆宇' },
+    { role: '406 讲师', username: 'pangkaiwen', name: '庞凯文' },
+    { role: '406 讲师', username: 'dingleilei', name: '丁蕾蕾' },
+    { role: '505 负责人', username: 'wanghao', name: '王浩' },
+    { role: '505 讲师', username: 'liujialiang', name: '刘嘉亮' },
+    { role: '505 讲师', username: 'liutianmeng', name: '刘天萌' },
+    { role: '505 讲师', username: 'lina', name: '李娜' }
   ],
   ADMIN: [{ role: '系统管理员', username: 'admin', name: '张建国' }]
 }
@@ -516,6 +536,8 @@ async function submit() {
   padding: 4px;
   border-radius: 14px;
   background: var(--fill-2);
+  max-height: 268px;
+  overflow-y: auto;
 }
 
 .demo-item {
