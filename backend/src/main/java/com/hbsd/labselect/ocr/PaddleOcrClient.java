@@ -17,17 +17,20 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * PaddleOCR HTTP 客户端。
+ * PaddleOCR HTTP 客户端，按 PaddleOCR 官方在线 API 协议调用。
  *
- * <p>默认按 PaddleOCR hubserving 协议调用：</p>
+ * <p>协议来源：PaddleOCR 官网（aistudio.baidu.com/paddleocr）与 AI Studio 帮助文档
+ * <a href="https://ai.baidu.com/ai-doc/AISTUDIO/Kmfl2ycs0">PP-OCRv5 API</a>：</p>
  * <pre>
- * POST {endpoint}
- * {"images": ["&lt;base64 png&gt;", "..."]}
- * 200 {"results":[{"data":[{"text":"识别文本","confidence":0.98}]}]}
+ * POST {endpoint}            // 如 https://xxxx.aistudio-hub.baidu.com/ocr
+ * Authorization: token &lt;AI Studio Access Token&gt;
+ * {"file": "&lt;base64&gt;", "fileType": 1, "visualize": false}
+ * 200 {"errorCode":0,"result":{"ocrResults":[{"prunedResult":{"rec_texts":[...]}}]}}
  * </pre>
  *
- * <p>同时兼容 PaddleX 3.x 的返回（result.ocrResults[].prunedResult.rec_texts）与
- * 简化的 {"texts":[...]}，方便换用不同部署方式。</p>
+ * <p>每次调用只接受一个文件，多页由本类逐页串行调用后拼接。
+ * 仍保留对 PaddleX 本地服务（result.ocrResults）与 hubserving（results[].data[].text）
+ * 两种返回结构的解析，便于切换部署方式。</p>
  */
 @Slf4j
 public class PaddleOcrClient {
@@ -44,17 +47,34 @@ public class PaddleOcrClient {
                 .build();
     }
 
-    /** 识别多张图片，返回按顺序拼接的文本。 */
+    /** 识别多张图片，返回按顺序拼接的文本。官方 API 单文件入参，故逐页调用。 */
     public String recognize(List<byte[]> images) {
         if (images.isEmpty()) {
             return "";
         }
-        List<String> encoded = new ArrayList<>();
-        for (byte[] image : images) {
-            encoded.add(Base64.getEncoder().encodeToString(image));
+        StringBuilder all = new StringBuilder();
+        for (int i = 0; i < images.size(); i++) {
+            String pageText = recognizeOne(images.get(i), i + 1);
+            if (!pageText.isBlank()) {
+                if (all.length() > 0) {
+                    all.append('\n');
+                }
+                all.append(pageText);
+            }
         }
+        return all.toString();
+    }
+
+    /** 单张图片走一次官方 API。 */
+    private String recognizeOne(byte[] image, int pageNo) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("images", encoded);
+        body.put("file", Base64.getEncoder().encodeToString(image));
+        body.put("fileType", 1);
+        body.put("useDocOrientationClassify", false);
+        body.put("useDocUnwarping", false);
+        body.put("useTextlineOrientation", false);
+        // 不要回传可视化结果图，避免每页返回数 MB 的 base64 图片
+        body.put("visualize", false);
 
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(properties.getEndpoint()))
@@ -62,15 +82,17 @@ public class PaddleOcrClient {
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body), StandardCharsets.UTF_8));
             if (properties.getApiKey() != null && !properties.getApiKey().isBlank()) {
-                builder.header("Authorization", "Bearer " + properties.getApiKey());
+                // 官方协议：Authorization: token <AI Studio Access Token>
+                builder.header("Authorization", "token " + properties.getApiKey());
             }
             HttpResponse<String> response = http.send(builder.build(),
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() / 100 != 2) {
-                throw new BizException(502, "PaddleOCR 返回 " + response.statusCode() + "：" + snippet(response.body()));
+                throw new BizException(502, "PaddleOCR 返回 " + response.statusCode() + "：" + snippet(response.body())
+                        + "（第 " + pageNo + " 页）");
             }
             String text = parse(mapper.readTree(response.body()));
-            log.info("PaddleOCR 识别 {} 页，得到 {} 字", images.size(), text.length());
+            log.info("PaddleOCR 第 {} 页识别 {} 字", pageNo, text.length());
             return text;
         } catch (BizException e) {
             throw e;
