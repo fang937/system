@@ -1,0 +1,25 @@
+# ---- 依赖：体积大，用 npm install 还原 ----
+frontend/node_modules/
+frontend/.vite/
+frontend/dist/
+
+# ---- 本地环境变量：含数据库密码，绝不入库 ----
+.env
+.env.local
+
+# ---- IDE / 编辑器 ----
+.idea/
+*.iml
+.vscode/
+
+# ---- 本地助手数据 ----
+.workbuddy/
+
+# ---- 后端构建产物（src 已恢复，target 整个不入库）----
+*.log
+backend/cp.txt
+backend/package-log.txt
+backend/target/
+
+# ---- 学生简历上传目录（运行时数据）----
+backend/uploads/

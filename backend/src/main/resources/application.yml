@@ -1,0 +1,109 @@
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    encoding:
+      charset: UTF-8
+      force: true
+
+spring:
+  application:
+    name: labselect
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 12MB
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:lab_select_v2}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false&createDatabaseIfNotExist=true
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:root}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 4
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
+      schema-locations: classpath:schema.sql
+      continue-on-error: false
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+    default-property-inclusion: always
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      logic-delete-field: null
+
+app:
+  upload:
+    # 学生简历落盘目录（相对启动目录），生产可挂载独立磁盘
+    resume-dir: ${RESUME_DIR:./uploads/resumes}
+    max-resume-mb: ${RESUME_MAX_MB:10}
+  ocr:
+    # PDF 优先抽文本层；扫描件才调 OCR。provider=none 可完全关闭
+    # auto：先 PP-StructureV3 文档解析，失败再退回普通 OCR；pp-structure-v3 / ocr：只用其中一种
+    provider: ${OCR_PROVIDER:auto}
+    # PP-StructureV3 文档解析地址（PaddleX 本地服务 / 星河社区在线服务）
+    # 例：http://127.0.0.1:8080/layout-parsing
+    structure-endpoint: ${OCR_STRUCTURE_ENDPOINT:}
+    structure-auth-scheme: ${OCR_STRUCTURE_AUTH_SCHEME:token}
+    structure-api-key: ${OCR_STRUCTURE_API_KEY:}
+    structure-table: ${OCR_STRUCTURE_TABLE:true}
+    structure-formula: ${OCR_STRUCTURE_FORMULA:false}
+    structure-timeout-seconds: ${OCR_STRUCTURE_TIMEOUT_SECONDS:120}
+    # 普通 OCR 服务地址，例如 http://127.0.0.1:8868/predict/ocr_system
+    endpoint: ${PADDLEOCR_ENDPOINT:}
+    api-key: ${PADDLEOCR_API_KEY:}
+    timeout-seconds: ${OCR_TIMEOUT_SECONDS:30}
+    # 文本层少于该字数才触发 OCR
+    min-chars: ${OCR_MIN_CHARS:60}
+    max-pages: ${OCR_MAX_PAGES:5}
+    render-dpi: ${OCR_RENDER_DPI:150}
+  jwt:
+    secret: ${JWT_SECRET:lab-select-rebuild-2026-secret-key-must-be-long-enough-32}
+    expire-hours: ${JWT_EXPIRE_HOURS:12}
+  demo:
+    enabled: ${DEMO_DATA:true}
+  offer:
+    # 阶段 5 学生未确认 Offer 的兜底确认时长（小时），阶段窗口更短时以阶段窗口为准
+    default-confirm-hours: 12
+  ai:
+    # 多通道：按顺序尝试，某个通道额度耗尽会自动切下一个；一个 Key 都没有时走内置规则引擎
+    enabled: ${AI_ENABLED:true}
+    provider: ${AI_PROVIDER:auto}
+    # 首选通道（对应下面 providers[].name），留空则按配置顺序
+    active: ${AI_ACTIVE:}
+    # 额度耗尽后的冷却时间（分钟）
+    quota-cooldown-minutes: ${AI_QUOTA_COOLDOWN_MINUTES:10}
+    timeout-seconds: ${AI_TIMEOUT_SECONDS:30}
+    temperature: 0.3
+    json-mode: ${AI_JSON_MODE:true}
+    providers:
+      - name: openai
+        base-url: ${AI_OPENAI_BASE_URL:https://api.openai.com/v1}
+        api-key: ${AI_OPENAI_KEY:}
+        model: ${AI_OPENAI_MODEL:gpt-4o-mini}
+      - name: deepseek
+        base-url: ${AI_DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}
+        api-key: ${AI_DEEPSEEK_KEY:}
+        model: ${AI_DEEPSEEK_MODEL:deepseek-chat}
+      - name: qwen
+        base-url: ${AI_QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+        api-key: ${AI_QWEN_KEY:}
+        model: ${AI_QWEN_MODEL:qwen-plus}
+    # 兼容旧写法：providers 全部未填 Key 时，用下面这一组
+    base-url: ${AI_BASE_URL:}
+    api-key: ${AI_API_KEY:}
+    model: ${AI_MODEL:gpt-4o-mini}
+
+logging:
+  level:
+    com.hbsd.labselect: info
+    root: warn

@@ -1,0 +1,99 @@
+# 学生实训室双向选择系统 —— 一键容器化部署
+#
+# 用法：
+#   cp .env.example .env     # 填好 MYSQL_ROOT_PASSWORD，按需改端口
+#   docker compose up -d --build
+#   docker compose logs -f backend
+#   docker compose down          # 停止（数据在 mysql-data 卷里，不会丢）
+#   docker compose down -v       # 连数据一起删（下次启动会重新写演示数据）
+#
+# 访问：http://localhost:${WEB_PORT}      前端（Nginx，含 /api 反向代理）
+#       http://localhost:${API_PORT}      后端（便于接口调试，可注释掉）
+
+name: lab-select
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: labselect-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 中设置 MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-lab_select_v2}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-time-zone=+08:00
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+    networks:
+      - labselect
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: labselect-backend:2.0.0
+    container_name: labselect-backend
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${MYSQL_DATABASE:-lab_select_v2}
+      DB_USER: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:-lab-select-rebuild-2026-secret-key-must-be-long-enough-32}
+      JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-12}
+      DEMO_DATA: ${DEMO_DATA:-true}
+      JAVA_OPTS: ${JAVA_OPTS:--Xms256m -Xmx512m}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks:
+      - labselect
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+    image: labselect-frontend:2.0.0
+    container_name: labselect-frontend
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8089}:80"
+    networks:
+      - labselect
+
+volumes:
+  mysql-data:
+    name: labselect-mysql-data
+
+networks:
+  labselect:
+    name: labselect-net
+    driver: bridge
