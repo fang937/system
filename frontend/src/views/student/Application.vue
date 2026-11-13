@@ -116,7 +116,7 @@
             <div class="choice-name">{{ choice.tutorName }}<span class="muted"> · {{ choice.labName }}</span></div>
             <div class="tiny">{{ choice.title }} · {{ choice.researchDirection }}</div>
           </div>
-          <span class="tiny">{{ choice.remainingQuota }}/{{ choice.quota }} 名额</span>
+          <span class="tiny">预计招收 {{ choice.quota }} 名 · 已报 {{ choice.applicantCount ?? 0 }} 人</span>
         </div>
       </div>
       <div class="flags">
@@ -163,14 +163,13 @@
           </div>
           <div class="chips">
             <span class="chip">{{ tutor.researchDirection }}</span>
-            <span class="chip">报考 {{ tutor.applicantCount }} 人</span>
           </div>
           <div class="quota-bar">
-            <span>剩余名额</span>
+            <span class="quota-text">预计招收 {{ tutor.quota }} 名</span>
             <div class="quota-track">
-              <div class="quota-fill" :style="{ width: usedPercent(tutor) + '%' }" />
+              <div class="quota-fill" :style="{ width: applyPercent(tutor) + '%' }" />
             </div>
-            <span class="mono">{{ tutor.remainingQuota }}/{{ tutor.quota }}</span>
+            <span class="mono">已报 {{ tutor.applicantCount }} 人</span>
           </div>
         </div>
       </div>
@@ -237,9 +236,10 @@ function statusOf(value) {
   return applicationStatusMap[value] || { label: value || '—', type: 'info' }
 }
 
-function usedPercent(tutor) {
+function applyPercent(tutor) {
+  // 进度条表达「已报人数 / 预计招收名额」的竞争度，100% 封顶
   if (!tutor.quota) return 0
-  return Math.min(100, Math.round(((tutor.quota - tutor.remainingQuota) / tutor.quota) * 100))
+  return Math.min(100, Math.round(((tutor.applicantCount || 0) / tutor.quota) * 100))
 }
 
 function toneOf(tutor) {
@@ -386,6 +386,19 @@ onMounted(load)
 
 .pick {
   cursor: pointer;
+}
+
+/* 名额行：左侧预计招收名额、中间竞争度进度条、右侧已报人数，三者不换行 */
+.tutor-card .quota-bar {
+  gap: 6px;
+}
+
+.quota-text {
+  white-space: nowrap;
+}
+
+.quota-bar .mono {
+  white-space: nowrap;
 }
 
 .order-badge {

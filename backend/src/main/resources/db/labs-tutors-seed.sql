@@ -1,6 +1,7 @@
 -- ============================================================
 -- 实训室 / 导师基础数据（真实名册）
--- 数据来源：实训室对比总表 2.0（6 个实训室 / 25 位导师）
+-- 数据来源：实训室对比总表 3.0（6 个实训室 / 25 位导师）
+-- 导师技术栈已在 2026-11-13 按 3.0 表格对齐（research_direction = 技术栈，intro = 原表整段）
 --
 -- 设计要点：
 --   1. 全部语句幂等：按 labs.code、users.username、tutors.user_id 三个唯一键收敛，
@@ -132,7 +133,7 @@ ON DUPLICATE KEY UPDATE
 
 -- ------------------------------------------------------------
 -- 三、导师招生单元（名额 = 原表「招生名额」）
--- title = 头衔，research_direction = 方向，intro = 原表「老师方向/头衔」整段
+-- title = 头衔，research_direction = 技术栈/方向，intro = 原表「老师方向/头衔」整段
 -- ------------------------------------------------------------
 INSERT INTO tutors (user_id, lab_id, title, research_direction, intro, quota, remaining_quota, version, status)
 SELECT u.id, u.lab_id, t.title, t.direction, t.intro, t.quota, t.quota, 0, 1
@@ -140,11 +141,11 @@ FROM (
   SELECT 'wangyanhua' AS username, '高级工程师' AS title,
          '408 考研（计网、计组）、AI 与软件工程' AS direction,
          '高级工程师｜408考研（计网、计组）、AI与软件工程；指导标书生成、论文检测、脱口派APP等项目' AS intro, 16 AS quota UNION ALL
-  SELECT 'changlingling', '高级工程师', '操作系统、软件测试',
+  SELECT 'changlingling', '高级工程师', '操作系统、软件测试、底层原理、软件质量保障',
          '高级工程师｜操作系统、软件测试，侧重底层原理、软件质量保障', 16 UNION ALL
   SELECT 'liuguanjun', 'AI 全栈工程师', 'Vue/React、Node.js/Python、AI Agent、跨端混合开发',
          'AI全栈工程师｜Vue/React、Node.js/Python，主攻AI Agent、跨端混合开发', 16 UNION ALL
-  SELECT 'fanjiahao', 'AI 全栈工程师', 'Java/SpringBoot、大型企业级项目',
+  SELECT 'fanjiahao', 'AI 全栈工程师', 'Java/SpringBoot、企业级项目开发',
          'AI全栈工程师｜Java/SpringBoot，大型企业级项目（移动、铁塔、联通相关）', 16 UNION ALL
 
   SELECT 'huguoxin', '主管', '安卓开发、Spring 框架、企业级应用开发',
@@ -158,16 +159,16 @@ FROM (
          '项目经理/Agent/全栈｜10年研发经验，曾任职随锐、快乐沃克，冬奥会技术顾问；移动端、AI全栈、Agent、AI产品/项目经理', 16 UNION ALL
   SELECT 'pingyuxuan', '全栈开发工程师', 'Python、大模型、RAG、AI Agent',
          '全栈开发工程师｜10年项目实战，参与移动App商城、云听平台；Python、大模型、RAG、AI Agent', 16 UNION ALL
-  SELECT 'zhangxiang', 'Java 后端/全栈', 'SpringBoot/SpringCloud、高并发、微服务、Linux 部署',
+  SELECT 'zhangxiang', 'Java 后端/全栈', 'SpringBoot/SpringCloud、MySQL、Redis、RabbitMQ、高并发、SQL 优化、微服务、Linux 部署',
          'Java后端/全栈｜5年Java后端经验，精通SpringBoot/SpringCloud、MySQL、Redis、RabbitMQ；高并发、SQL优化、微服务、Linux部署', 16 UNION ALL
   SELECT 'wangxiaolong', '硬件/云服务器/网络运维', '网络工程、服务器运维、阿里云、域名备案',
          '硬件/云服务器/网络运维｜思科认证网络工程师，十余年运维经验；企业服务器、华为/思科网络设备、阿里云、域名备案', 16 UNION ALL
 
-  SELECT 'gaoxuan', '团队带头人', '人工智能算法、智能体应用、知识库落地',
+  SELECT 'gaoxuan', '团队带头人', '人工智能算法、智能体应用、知识库落地、小程序开发',
          '团队带头人｜人工智能算法、智能体应用、知识库落地；上线多款小程序；育人：做推进社会进步的研究，育敢为人先的人才', 14 UNION ALL
   SELECT 'wangpengfan', '高级 AI 全栈导师', 'Java 企业级开发、AI 全栈',
          '高级AI全栈导师｜深耕Java企业级开发、AI全栈；上线网络考试系统、村级事务平台等；育人：技术是迭代的，但底层逻辑和架构思维是永恒的', 13 UNION ALL
-  SELECT 'zhanghuibin', '硬核架构师', 'AI 全栈、Java 开发、数据库',
+  SELECT 'zhanghuibin', '硬核架构师', 'AI 全栈、Java 开发、数据库、架构设计',
          '硬核架构师｜AI全栈、Java开发、数据库；保险SaaS、智慧农业平台等项目；擅长竞赛指导、软著；育人：做有效沟通，对认真的人负责', 13 UNION ALL
   SELECT 'wangfengpei', 'AI 全栈导师', '前端工程化、企业级研发',
          'AI全栈导师｜前端工程化，企业级研发；智慧农业平台、AI家校平台等；育人：以企业真实需求为导向，提升工程化交付能力', 12 UNION ALL
@@ -185,11 +186,14 @@ FROM (
   SELECT 'dingleilei', '人工智能', '机器学习、大模型、元学习、小样本学习',
          '人工智能｜机器学习、大模型、企业级项目；元学习、小样本学习，有百万级智慧农业等企业项目', 13 UNION ALL
 
-  SELECT 'wanghao', '组长', 'AI 全栈工程',
-         '组长｜AI全栈工程', 16 UNION ALL
-  SELECT 'liujialiang', '导师', 'AI 全栈工程', 'AI全栈工程', 16 UNION ALL
-  SELECT 'liutianmeng', '导师', 'AI 大模型方向', 'AI大模型方向', 16 UNION ALL
-  SELECT 'lina', '导师', '需求与产品质量', '需求与产品质量', 16
+  SELECT 'wanghao', '组长', 'Java/Spring Boot、Vue、Spring AI、RAG 与 Agent、Docker 部署',
+         '505实训室负责人·组长｜专任教师；研究方向：AI全栈工程化、大模型应用落地、项目制教学；主讲《AI全栈开发》《Java全栈》，主导AI全栈课程与VibeCoding工程化教程建设，统筹实训室工作；技术专长：Java/Spring Boot、Vue、Spring AI、RAG与Agent、Docker部署', 16 UNION ALL
+  SELECT 'liujialiang', '导师', 'Spring Boot、Vue2/3、React、微信小程序、Docker/Nginx 部署运维、AI Agent',
+         'AI全栈开发工程师·全栈技术负责人（Java+前端+AI工程化）；擅长AI原生全栈研发，覆盖需求建模→前后端编码→部署上线全流程闭环；掌握Spring Boot+MySQL后端架构，擅长将大模型接口、AI Agent、音视频处理能力落地到实际业务系统；技术专长：Spring Boot、Vue2/3、React、微信小程序、Docker/Nginx部署运维', 16 UNION ALL
+  SELECT 'liutianmeng', '导师', '机器学习、深度学习、Agent、RAG、模型微调、计算机视觉',
+         '专任教师·开发工程师｜研究方向：人工智能、大模型应用、计算机视觉；主讲《人工智能导论》《大模型应用技术》《机器学习》，指导毕业设计、科研项目及学科竞赛；技术专长：机器学习、深度学习、Agent、RAG、模型微调', 16 UNION ALL
+  SELECT 'lina', '导师', 'C 语言程序设计、数据库技术、需求拆解、流程设计、质量验收',
+         '基础课程讲师·项目需求与质量把控负责人；教学方向：C语言程序设计与数据库技术，教学中引入AI辅助编程；擅长从业务场景提炼需求、形成清晰可执行的产品方案，系统化排查逻辑漏洞与体验缺陷、推动问题闭环解决；技术专长：需求拆解、流程设计、质量验收、AI辅助编程指导', 16
 ) t
 JOIN users u ON u.username = t.username
 ON DUPLICATE KEY UPDATE

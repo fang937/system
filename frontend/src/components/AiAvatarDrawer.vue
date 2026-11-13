@@ -95,6 +95,13 @@ const placeholder = ref(false)
 const errorMsg = ref('')
 const scroller = ref(null)
 
+// 当前会话归属的导师：切换导师时据此判断要不要丢弃旧上下文
+const sessionTutorId = ref(null)
+// 会话代次：切换导师后旧请求才返回时直接丢弃，避免答案串到新导师的界面
+let chatSeq = 0
+
+const DEFAULT_BOUNDARY = '不承诺录取结果、不评价其他导师、不透露面试题目'
+
 // 师生直连：模式 ai=AI 分身（秒回） / direct=真实私信（老师回复）
 const mode = ref('ai')
 const directMessages = ref([])
@@ -121,28 +128,61 @@ const activeMessages = computed(() =>
       }))
 )
 
+/** 清空当前会话的全部上下文（消息、草稿、错误、代次） */
+function resetConversation() {
+  chatSeq += 1
+  messages.value = []
+  directMessages.value = []
+  draft.value = ''
+  errorMsg.value = ''
+  placeholder.value = false
+  boundary.value = DEFAULT_BOUNDARY
+  sending.value = false
+  directSending.value = false
+  directLoading.value = false
+}
+
+/** 确保当前展示的是当前导师的会话；导师变了就先清空再初始化 */
+async function ensureConversation() {
+  const id = props.tutor?.tutorId
+  if (sessionTutorId.value !== id) {
+    resetConversation()
+    sessionTutorId.value = id
+  }
+  if (mode.value === 'direct') {
+    await loadDirect()
+    return
+  }
+  if (!messages.value.length) {
+    messages.value = [
+      {
+        role: 'assistant',
+        content:
+          props.tutor?.greeting ||
+          `你好，我是${props.tutor?.tutorName || '导师'}老师的 AI 分身，可以聊聊方向和面试准备。`,
+        citations: []
+      }
+    ]
+  }
+  await nextTick()
+  scrollToEnd()
+}
+
 watch(
   () => props.modelValue,
   async (open) => {
     document.body.style.overflow = open ? 'hidden' : ''
     if (!open) return
-    if (mode.value === 'direct') {
-      await loadDirect()
-      return
-    }
-    if (!messages.value.length) {
-      messages.value = [
-        {
-          role: 'assistant',
-          content:
-            props.tutor?.greeting ||
-            `你好，我是${props.tutor?.tutorName || '导师'}老师的 AI 分身，可以聊聊方向和面试准备。`,
-          citations: []
-        }
-      ]
-    }
-    await nextTick()
-    scrollToEnd()
+    await ensureConversation()
+  }
+)
+
+// 抽屉开着时换到另一位导师，整个会话也要跟着换掉
+watch(
+  () => props.tutor?.tutorId,
+  async () => {
+    if (!props.modelValue) return
+    await ensureConversation()
   }
 )
 
@@ -174,17 +214,22 @@ async function loadDirect() {
     errorMsg.value = '缺少老师账号信息，无法建立会话'
     return
   }
+  const seq = chatSeq
   directLoading.value = true
   errorMsg.value = ''
   try {
     const res = await api.messageConversation(userId)
+    if (seq !== chatSeq) return
     directMessages.value = res?.messages || []
   } catch (error) {
+    if (seq !== chatSeq) return
     errorMsg.value = `会话加载失败：${error.message}`
   } finally {
-    directLoading.value = false
-    await nextTick()
-    scrollToEnd()
+    if (seq === chatSeq) {
+      directLoading.value = false
+      await nextTick()
+      scrollToEnd()
+    }
   }
 }
 
@@ -200,6 +245,7 @@ async function send() {
   }
   const question = draft.value.trim()
   if (!question || sending.value || !props.tutor?.tutorId) return
+  const seq = chatSeq
   messages.value.push({ role: 'student', content: question })
   draft.value = ''
   sending.value = true
@@ -212,6 +258,7 @@ async function send() {
       question,
       history: messages.value.slice(-6).map((m) => ({ role: m.role, content: m.content }))
     })
+    if (seq !== chatSeq) return
     const data = res?.data || {}
     placeholder.value = Boolean(res?.placeholder)
     if (data.boundary) boundary.value = data.boundary
@@ -221,14 +268,17 @@ async function send() {
       citations: data.citations || []
     })
   } catch (error) {
+    if (seq !== chatSeq) return
     errorMsg.value =
       error.code === 429
         ? `AI 额度不足，分身暂不可用：${error.message}`
         : `分身暂时不可用：${error.message}。可稍后重试或直接联系导师。`
   } finally {
-    sending.value = false
-    await nextTick()
-    scrollToEnd()
+    if (seq === chatSeq) {
+      sending.value = false
+      await nextTick()
+      scrollToEnd()
+    }
   }
 }
 
@@ -237,18 +287,21 @@ async function sendDirect() {
   const text = draft.value.trim()
   const userId = props.tutor?.userId
   if (!text || directSending.value || !userId) return
+  const seq = chatSeq
   directSending.value = true
   errorMsg.value = ''
   try {
     const sent = await api.messageSend(userId, text)
+    if (seq !== chatSeq) return
     directMessages.value.push(sent || { mine: 1, content: text, createdAt: '' })
     draft.value = ''
     await nextTick()
     scrollToEnd()
   } catch (error) {
+    if (seq !== chatSeq) return
     errorMsg.value = `发送失败：${error.message}`
   } finally {
-    directSending.value = false
+    if (seq === chatSeq) directSending.value = false
   }
 }
 </script>

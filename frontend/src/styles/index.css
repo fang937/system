@@ -428,6 +428,9 @@ a {
   border-radius: var(--radius-pill);
   background: var(--fill-2);
   color: var(--label-2);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
 }
 
 /* 名额进度 */

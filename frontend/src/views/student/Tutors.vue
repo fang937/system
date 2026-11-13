@@ -96,7 +96,7 @@
           v-for="lab in labList"
           :key="lab.id"
           class="lab-card"
-          :class="{ open: openLabId === lab.id }"
+          :class="{ open: isLabOpen(lab.id) }"
         >
           <header class="lab-head" @click="toggleLab(lab.id)">
             <span class="lab-code">{{ lab.code }}</span>
@@ -114,7 +114,7 @@
 
           <p class="lab-dir">{{ lab.description }}</p>
 
-          <div v-show="openLabId === lab.id" class="lab-detail">
+          <div v-show="isLabOpen(lab.id)" class="lab-detail">
             <div v-for="row in detailRows(lab)" :key="row.label" class="detail-row">
               <span class="detail-label">{{ row.label }}</span>
               <span class="detail-value">{{ row.value }}</span>
@@ -193,7 +193,12 @@ const activeLab = ref(0)
 
 // 实训室概览（实训室级对比信息，来自 /meta/labs）
 const labList = ref([])
-const openLabId = ref(null)
+// 允许多个实训室同时展开；点击只切换被点的那个，不影响其他
+const openLabIds = ref([])
+
+function isLabOpen(id) {
+  return openLabIds.value.includes(id)
+}
 
 const recommend = ref(null)
 const aiLoading = ref(false)
@@ -225,7 +230,12 @@ function detailRows(lab) {
 }
 
 function toggleLab(id) {
-  openLabId.value = openLabId.value === id ? null : id
+  const index = openLabIds.value.indexOf(id)
+  if (index >= 0) {
+    openLabIds.value.splice(index, 1)
+  } else {
+    openLabIds.value.push(id)
+  }
 }
 
 const labs = computed(() => {
@@ -290,7 +300,8 @@ onMounted(async () => {
     ])
     tutors.value = tutorData || []
     labList.value = labData || []
-    if (labList.value.length) openLabId.value = labList.value[0].id
+    // 首屏默认展开第一个实训室，其余保持收起
+    if (labList.value.length) openLabIds.value = [labList.value[0].id]
   } finally {
     loading.value = false
   }
@@ -342,6 +353,8 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 10px;
+  /* 关键：卡片按自身内容高度排列，展开一张不会把同排其他卡片一起拉长 */
+  align-items: start;
 }
 
 .lab-card {

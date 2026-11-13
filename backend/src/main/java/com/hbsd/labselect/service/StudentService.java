@@ -94,10 +94,14 @@ public class StudentService {
             choice.put("tutorId", ids.get(i));
             List<Map<String, Object>> tutorRows = jdbc.queryForList("""
                     SELECT u.name AS tutorName, t.title, t.research_direction AS researchDirection,
-                           l.name AS labName, t.quota, t.remaining_quota AS remainingQuota
+                           l.name AS labName, t.quota, t.remaining_quota AS remainingQuota,
+                           (SELECT COUNT(*) FROM applications a
+                             WHERE a.round_no = ?
+                               AND (a.tutor_1_id = t.id OR a.tutor_2_id = t.id OR a.tutor_3_id = t.id))
+                                                     AS applicantCount
                       FROM tutors t JOIN users u ON u.id = t.user_id JOIN labs l ON l.id = t.lab_id
                      WHERE t.id = ?
-                    """, ids.get(i));
+                    """, round, ids.get(i));
             choice.putAll(tutorRows.isEmpty() ? Map.of("tutorName", "（导师已删除）") : tutorRows.get(0));
             choices.add(choice);
         }
