@@ -48,9 +48,16 @@ app:
     max-resume-mb: ${RESUME_MAX_MB:10}
   ocr:
     # PDF 优先抽文本层；扫描件才调 OCR。provider=none 可完全关闭
-    # auto：先 PP-StructureV3 文档解析，失败再退回普通 OCR；pp-structure-v3 / ocr：只用其中一种
+    # auto：MinerU → PP-StructureV3 → 普通 OCR 依次尝试（也可在管理端「简历解析引擎」切换，存 system_config）
+    # mineru / pp-structure-v3 / ocr：只用其中一种
     provider: ${OCR_PROVIDER:auto}
-    # PP-StructureV3 文档解析地址（PaddleX 本地服务 / 星河社区在线服务）
+    # MinerU 精准解析（首选）：https://mineru.net/api/v4
+    mineru-endpoint: ${MINERU_ENDPOINT:https://mineru.net/api/v4}
+    mineru-token: ${MINERU_TOKEN:}
+    mineru-model: ${MINERU_MODEL:vlm}
+    mineru-force-ocr: ${MINERU_FORCE_OCR:true}
+    mineru-timeout-seconds: ${MINERU_TIMEOUT_SECONDS:180}
+    # PP-StructureV3 文档解析地址（PaddleX 本地服务 / 星河社区在线服务），作为副选
     # 例：http://127.0.0.1:8080/layout-parsing
     structure-endpoint: ${OCR_STRUCTURE_ENDPOINT:}
     structure-auth-scheme: ${OCR_STRUCTURE_AUTH_SCHEME:token}

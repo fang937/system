@@ -14,10 +14,26 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class OcrProperties {
 
     /**
-     * auto：优先 PP-StructureV3，失败再退回普通 OCR；
-     * pp-structure-v3：只用文档解析；ocr：只用普通识别；none：全部禁用。
+     * auto：MinerU → PP-StructureV3 → 普通 OCR 依次尝试；
+     * mineru：只用 MinerU；pp-structure-v3：只用文档解析；ocr：只用普通识别；none：全部禁用。
+     * 该值可被管理端「简历解析引擎」覆盖（存 system_config: ocr.provider）。
      */
     private String provider = "auto";
+
+    /** MinerU 精准解析接口根地址 */
+    private String mineruEndpoint = "https://mineru.net/api/v4";
+
+    /** MinerU 访问令牌（Bearer） */
+    private String mineruToken = "";
+
+    /** MinerU 解析模型：pipeline / vlm（vlm 对复杂版式更准，速度略慢） */
+    private String mineruModel = "vlm";
+
+    /** MinerU 是否按扫描件强制 OCR */
+    private boolean mineruForceOcr = true;
+
+    /** MinerU 任务轮询超时（整份 PDF 解析 + 排队） */
+    private int mineruTimeoutSeconds = 180;
 
     /** PP-StructureV3 服务地址，例如 http://127.0.0.1:8080/layout-parsing */
     private String structureEndpoint = "";
@@ -61,6 +77,12 @@ public class OcrProperties {
         return !"none".equalsIgnoreCase(provider)
                 && !"ocr".equalsIgnoreCase(provider)
                 && structureEndpoint != null && !structureEndpoint.isBlank();
+    }
+
+    /** MinerU 是否具备调用条件（只看令牌，provider 由 OcrProviderResolver 决定） */
+    public boolean mineruConfigured() {
+        return mineruToken != null && !mineruToken.isBlank()
+                && mineruEndpoint != null && !mineruEndpoint.isBlank();
     }
 
     public boolean paddleEnabled() {

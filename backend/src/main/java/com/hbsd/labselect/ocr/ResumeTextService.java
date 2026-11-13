@@ -42,6 +42,8 @@ public class ResumeTextService {
     private final OcrProperties properties;
     private final PaddleOcrClient ocrClient;
     private final PpStructureV3Client structureClient;
+    private final MineruClient mineruClient;
+    private final OcrProviderResolver providerResolver;
 
     @Value("${app.upload.resume-dir:./uploads/resumes}")
     private String resumeDir;
@@ -111,36 +113,55 @@ public class ResumeTextService {
             if (text.length() >= properties.getMinChars()) {
                 return new Extract(text, "pdf-text", pages, text.length(), false);
             }
-            if (!properties.structureEnabled() && !properties.paddleEnabled()) {
-                return new Extract(text, "pdf-text", pages, text.length(), false);
-            }
 
-            // 1) 优先 PP-StructureV3：整份 PDF 交给服务端做版面分析，产出带结构的 Markdown
-            if (properties.structureEnabled()) {
-                try {
-                    PpStructureV3Client.ParseResult parsed = structureClient.parsePdf(path);
-                    String markdown = cleanMarkdown(parsed.markdown());
-                    if (markdown.length() > text.length()) {
-                        return new Extract(markdown, "pp-structure-v3", parsed.pages(), markdown.length(), false);
+            // 按管理端选择的引擎顺序依次尝试：auto 时 MinerU → PP-StructureV3 → 普通 OCR
+            for (String engine : providerResolver.plan()) {
+                if ("mineru".equals(engine) && properties.mineruConfigured()) {
+                    try {
+                        String markdown = cleanMarkdown(mineruClient.parse(path));
+                        if (markdown.length() > text.length()) {
+                            return new Extract(markdown, "mineru", pages, markdown.length(), false);
+                        }
+                    } catch (RuntimeException e) {
+                        log.warn("MinerU 解析失败，尝试降级：{}", e.getMessage());
                     }
-                } catch (RuntimeException e) {
-                    log.warn("PP-StructureV3 解析失败，尝试降级：{}", e.getMessage());
                 }
-            }
-
-            // 2) 降级：逐页渲染走普通 OCR
-            if (properties.paddleEnabled()) {
-                List<byte[]> images = render(document);
-                String ocrText = normalize(ocrClient.recognize(images));
-                if (ocrText.length() > text.length()) {
-                    return new Extract(ocrText, "paddleocr", Math.min(pages, properties.getMaxPages()),
-                            ocrText.length(), false);
+                if ("pp-structure-v3".equals(engine) && structureAvailable()) {
+                    try {
+                        PpStructureV3Client.ParseResult parsed = structureClient.parsePdf(path);
+                        String markdown = cleanMarkdown(parsed.markdown());
+                        if (markdown.length() > text.length()) {
+                            return new Extract(markdown, "pp-structure-v3", parsed.pages(), markdown.length(), false);
+                        }
+                    } catch (RuntimeException e) {
+                        log.warn("PP-StructureV3 解析失败，尝试降级：{}", e.getMessage());
+                    }
+                }
+                if ("ocr".equals(engine) && paddleAvailable()) {
+                    try {
+                        List<byte[]> images = render(document);
+                        String ocrText = normalize(ocrClient.recognize(images));
+                        if (ocrText.length() > text.length()) {
+                            return new Extract(ocrText, "paddleocr", Math.min(pages, properties.getMaxPages()),
+                                    ocrText.length(), false);
+                        }
+                    } catch (RuntimeException e) {
+                        log.warn("普通 OCR 解析失败：{}", e.getMessage());
+                    }
                 }
             }
             return new Extract(text, "pdf-text", pages, text.length(), false);
         } catch (InvalidPasswordException e) {
             return Extract.empty("encrypted");
         }
+    }
+
+    private boolean structureAvailable() {
+        return properties.getStructureEndpoint() != null && !properties.getStructureEndpoint().isBlank();
+    }
+
+    private boolean paddleAvailable() {
+        return properties.getEndpoint() != null && !properties.getEndpoint().isBlank();
     }
 
     private List<byte[]> render(PDDocument document) throws Exception {

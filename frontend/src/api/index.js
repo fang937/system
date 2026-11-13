@@ -156,6 +156,8 @@ export const api = {
   aiResumeReview: (applicationId) => http.post('/ai/resume-review', { applicationId }, { skipErrorToast: true }),
   aiProviders: () => http.get('/ai/providers'),
   aiActivateProvider: (name) => http.post(`/ai/providers/${name}/activate`),
+  ocrConfig: () => http.get('/admin/ocr-config'),
+  updateOcrConfig: (provider) => http.put('/admin/ocr-config', { provider }),
 
   // 师生直连私信（学生 ↔ 导师/负责人）
   messageThreads: () => http.get('/messages/threads'),

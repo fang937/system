@@ -115,6 +115,42 @@
 
     <el-card shadow="never" class="card card-pad">
       <div class="section-title">
+        <h3>简历解析引擎</h3>
+        <span class="muted">扫描件简历走哪个 OCR 服务，切换后立即生效</span>
+      </div>
+
+      <div class="ocr-row">
+        <el-radio-group v-model="ocr.provider" :disabled="ocr.saving" @change="saveOcr">
+          <el-radio-button value="auto">自动（MinerU 优先）</el-radio-button>
+          <el-radio-button value="mineru">仅 MinerU</el-radio-button>
+          <el-radio-button value="pp-structure-v3">仅 PP-StructureV3</el-radio-button>
+          <el-radio-button value="ocr">仅普通 OCR</el-radio-button>
+          <el-radio-button value="none">关闭 OCR</el-radio-button>
+        </el-radio-group>
+      </div>
+
+      <div class="ocr-available">
+        <el-tag :type="ocr.available.mineru ? 'success' : 'info'" effect="light" size="small">
+          MinerU {{ ocr.available.mineru ? '已配置 · 首选' : '未配置令牌' }}
+        </el-tag>
+        <el-tag :type="ocr.available['pp-structure-v3'] ? 'success' : 'info'" effect="light" size="small">
+          PP-StructureV3 {{ ocr.available['pp-structure-v3'] ? '已配置 · 副选' : '未配置地址' }}
+        </el-tag>
+        <el-tag :type="ocr.available.ocr ? 'success' : 'info'" effect="light" size="small">
+          普通 OCR {{ ocr.available.ocr ? '已配置' : '未配置' }}
+        </el-tag>
+        <span v-if="ocr.model" class="tiny">MinerU 模型：{{ ocr.model }}</span>
+      </div>
+
+      <p class="ocr-note">
+        自动模式按 <b>MinerU → PP-StructureV3 → 普通 OCR</b> 依次尝试，前一个失败自动降级；
+        密钥在 <code>.env</code> 配置（<code>MINERU_TOKEN</code> / <code>OCR_STRUCTURE_API_KEY</code>），不在页面暴露。
+        带文本层的 PDF 与 DOCX 不经过 OCR，直接读正文。
+      </p>
+    </el-card>
+
+    <el-card shadow="never" class="card card-pad">
+      <div class="section-title">
         <h3>最新录取动态</h3>
       </div>
       <div v-if="!(data.recentMatches || []).length" class="empty">暂无录取记录</div>
@@ -131,7 +167,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { api } from '../../api/index.js'
@@ -142,6 +178,40 @@ const loading = ref(false)
 const data = ref({})
 const providers = ref([])
 const stats = computed(() => data.value.stats || {})
+
+const ocr = reactive({ provider: 'auto', available: {}, model: '', saving: false })
+
+const OCR_LABELS = {
+  auto: '自动（MinerU 优先）',
+  mineru: '仅 MinerU',
+  'pp-structure-v3': '仅 PP-StructureV3',
+  ocr: '仅普通 OCR',
+  none: '已关闭 OCR'
+}
+
+async function loadOcr() {
+  try {
+    const res = await api.ocrConfig()
+    ocr.provider = res?.provider || 'auto'
+    ocr.available = res?.available || {}
+    ocr.model = res?.model || ''
+  } catch (error) {
+    ElMessage.error(`读取解析引擎配置失败：${error.message}`)
+  }
+}
+
+async function saveOcr(value) {
+  ocr.saving = true
+  try {
+    await api.updateOcrConfig(value)
+    ElMessage.success(`简历解析引擎：${OCR_LABELS[value] || value}`)
+  } catch (error) {
+    ElMessage.error(`切换失败：${error.message}`)
+    await loadOcr()
+  } finally {
+    ocr.saving = false
+  }
+}
 
 function percent(row) {
   if (!row.totalQuota) return 0
@@ -180,10 +250,41 @@ async function switchProvider(name) {
 onMounted(() => {
   load()
   loadProviders()
+  loadOcr()
 })
 </script>
 
 <style scoped>
+.ocr-row {
+  margin: 2px 0 12px;
+}
+
+.ocr-available {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ocr-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.75;
+  color: var(--label-3);
+}
+
+.ocr-note b {
+  color: var(--label-1);
+  font-weight: 650;
+}
+
+.ocr-note code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--fill-1);
+  font-size: 11.5px;
+}
+
 .head-tools {
   display: flex;
   align-items: center;

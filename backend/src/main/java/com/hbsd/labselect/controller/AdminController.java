@@ -5,6 +5,7 @@ import com.hbsd.labselect.common.RequireRole;
 import com.hbsd.labselect.dto.ManualAdjustReq;
 import com.hbsd.labselect.dto.PhaseWindowReq;
 import com.hbsd.labselect.dto.TutorSaveReq;
+import com.hbsd.labselect.ocr.OcrProviderResolver;
 import com.hbsd.labselect.service.AdminService;
 import com.hbsd.labselect.service.AdjustService;
 import com.hbsd.labselect.service.PhaseService;
@@ -31,10 +32,26 @@ public class AdminController {
 
     private final AdminService adminService;
     private final AdjustService adjustService;
+    private final OcrProviderResolver ocrProviderResolver;
 
     @GetMapping("/overview")
     public R<Map<String, Object>> overview() {
         return R.ok(adminService.overview());
+    }
+
+    /* ---------- 简历解析引擎 ---------- */
+
+    /** 当前引擎与各引擎可用性（不返回任何密钥） */
+    @GetMapping("/ocr-config")
+    public R<Map<String, Object>> ocrConfig() {
+        return R.ok(ocrProviderResolver.snapshot());
+    }
+
+    /** 切换引擎：auto / mineru / pp-structure-v3 / ocr / none，保存后立即生效 */
+    @PutMapping("/ocr-config")
+    public R<Void> updateOcrConfig(@RequestBody Map<String, String> body) {
+        ocrProviderResolver.update(body.get("provider"));
+        return R.ok();
     }
 
     /* ---------- 阶段与轮次 ---------- */

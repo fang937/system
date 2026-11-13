@@ -19,4 +19,9 @@ public class OcrConfig {
     public PaddleOcrClient paddleOcrClient(OcrProperties properties, ObjectMapper objectMapper) {
         return new PaddleOcrClient(properties, objectMapper);
     }
+
+    @Bean
+    public MineruClient mineruClient(OcrProperties properties, ObjectMapper objectMapper) {
+        return new MineruClient(properties, objectMapper);
+    }
 }

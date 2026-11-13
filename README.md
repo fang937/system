@@ -65,6 +65,20 @@ MYSQL_ROOT_PASSWORD=你的MySQL密码
 
 其余保持默认即可。OCR / AI 的 Key 不填也能跑通全部功能（走内置规则引擎，界面会标「规则引擎预览」），需要真实模型时再补。
 
+扫描件简历要解析出正文的话，配一个 OCR 就够（按优先级）：
+
+```ini
+# 首选：MinerU（mineru.net），填一个令牌即可，建议
+MINERU_TOKEN=sk-你的令牌
+
+# 副选：飞桨星河 PP-StructureV3（可选，作为 MinerU 的降级）
+OCR_STRUCTURE_ENDPOINT=https://paddleocr.aistudio-app.com/api/v2/ocr/jobs
+OCR_STRUCTURE_API_KEY=你的令牌
+OCR_STRUCTURE_AUTH_SCHEME=bearer
+```
+
+带文本层的 PDF 与 DOCX 不走 OCR，直接读正文，所以演示用的简历不配也没事。管理员端「全局看板」里还能随时切换引擎（自动 / 仅 MinerU / 仅 PP-StructureV3 / 关闭）。
+
 验证：
 
 ```bash
