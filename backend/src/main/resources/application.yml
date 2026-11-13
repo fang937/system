@@ -8,15 +8,22 @@ server:
 spring:
   application:
     name: labselect
+  # 让裸跑（mvn spring-boot:run / IDE）也能读到仓库根目录的 .env：
+  # - 在 backend/ 目录启动 → 命中 ../.env
+  # - 在仓库根目录启动 → 命中 .env
+  # Docker 部署时容器内没有该文件，optional 前缀会直接跳过，不影响 compose 注入的变量
+  config:
+    import: optional:file:.env[.properties],optional:file:../.env[.properties]
   servlet:
     multipart:
       max-file-size: 10MB
       max-request-size: 12MB
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:lab_select_v2}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false&createDatabaseIfNotExist=true
+    # 优先取 DB_*（Docker 注入 / dev.ps1 映射）；裸跑时回退到 .env 里的 MYSQL_*（docker compose 同款变量名）
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:${MYSQL_PORT:3306}}/${DB_NAME:${MYSQL_DATABASE:lab_select_v2}}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false&createDatabaseIfNotExist=true
     username: ${DB_USER:root}
-    password: ${DB_PASSWORD:root}
+    password: ${DB_PASSWORD:${MYSQL_ROOT_PASSWORD:root}}
     hikari:
       maximum-pool-size: 20
       minimum-idle: 4
