@@ -2,6 +2,7 @@ package com.hbsd.labselect.service;
 
 import com.hbsd.labselect.common.BizException;
 import com.hbsd.labselect.common.UserContext;
+import com.hbsd.labselect.ai.ResumeProfileService;
 import com.hbsd.labselect.ai.ResumeTagService;
 import com.hbsd.labselect.ocr.ResumeTextService;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +48,7 @@ public class ResumeService {
     private final JdbcTemplate jdbc;
     private final ResumeTextService resumeTextService;
     private final ResumeTagService resumeTagService;
+    private final ResumeProfileService resumeProfileService;
 
     @Value("${app.upload.resume-dir:./uploads/resumes}")
     private String resumeDir;
@@ -78,6 +80,8 @@ public class ResumeService {
         result.put("textChars", extract.chars());
         result.put("textEngine", extract.engine());
         result.put("tags", resumeTagService.tags(extract.text()));
+        // 技术栈之外的经历与性格特质（教师端初评用的是同一份画像）
+        result.put("profile", resumeProfileService.profile(extract.text()));
         return result;
     }
 

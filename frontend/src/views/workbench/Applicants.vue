@@ -170,6 +170,20 @@
             </div>
           </template>
 
+          <template v-if="(review.resumeProfile?.experiences || []).length">
+            <div class="ai-section-title">项目与实践经历</div>
+            <ul class="exp-list">
+              <li v-for="(item, index) in review.resumeProfile.experiences" :key="index">{{ item }}</li>
+            </ul>
+          </template>
+
+          <template v-if="(review.resumeProfile?.traits || []).length">
+            <div class="ai-section-title">性格与特质</div>
+            <div class="skill-cloud">
+              <span v-for="trait in review.resumeProfile.traits" :key="trait" class="trait-pill">{{ trait }}</span>
+            </div>
+          </template>
+
           <template v-if="(review.highlights || []).length">
             <div class="ai-section-title">亮点</div>
             <div class="ai-list">
@@ -484,6 +498,30 @@ onMounted(() => {
   background: rgba(0, 122, 255, 0.1);
   color: var(--ios-blue);
   white-space: nowrap;
+}
+
+.trait-pill {
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(52, 199, 89, 0.12);
+  color: var(--ios-green-dark);
+  white-space: nowrap;
+}
+
+.exp-list {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.exp-list li {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--label-1);
 }
 
 .head-tools {

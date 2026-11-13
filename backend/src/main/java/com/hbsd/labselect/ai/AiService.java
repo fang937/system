@@ -32,6 +32,7 @@ public class AiService {
     private final PhaseService phaseService;
     private final ResumeTextService resumeTextService;
     private final ResumeTagService resumeTagService;
+    private final ResumeProfileService resumeProfileService;
 
     /* ---------------- 评分标准 ---------------- */
 
@@ -181,6 +182,8 @@ public class AiService {
         List<Map<String, Object>> resumeTags = resumeTagService.tags(extract.text());
         data.put("resumeTags", resumeTags);
         data.put("resumeTagNames", resumeTags.stream().map(t -> String.valueOf(t.get("name"))).toList());
+        // 简历画像：技术栈之外再给经历与性格特质
+        data.put("resumeProfile", resumeProfileService.profile(extract.text()));
 
         data.put("resumeDigest", Map.of(
                 "engine", extract.engine(),

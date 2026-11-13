@@ -295,24 +295,41 @@ POST /api/ai/providers/{name}/activate （角色：SYS_ADMIN，切换首选并�
 ### 接入 PP-StructureV3
 
 ```bash
-# 本地服务（PaddleX 3.x）
+# 方式 A：本地服务（PaddleX 3.x），同步接口
 paddlex --serve --pipeline PP-StructureV3 --port 8080
 # OCR_STRUCTURE_ENDPOINT=http://127.0.0.1:8080/layout-parsing
 
-# 星河社区在线服务（无需本地 GPU，按量计费）
-# OCR_STRUCTURE_ENDPOINT=https://xxxx.aistudio-app.com/layout-parsing
-# OCR_STRUCTURE_API_KEY=<访问令牌>
+# 方式 B：星河社区在线服务，异步任务接口（推荐，无需本地 GPU）
+OCR_STRUCTURE_ENDPOINT=https://paddleocr.aistudio-app.com/api/v2/ocr/jobs
+OCR_STRUCTURE_API_KEY=<访问令牌>
+OCR_STRUCTURE_AUTH_SCHEME=bearer        # 星河社区是小写 bearer
+OCR_STRUCTURE_TIMEOUT_SECONDS=180
 ```
 
-请求体：
+**两种形态由 endpoint 自动识别**：含 `/jobs` 走异步 Job 轮询，否则走同步 base64 直传。
+
+异步 Job 流程（`PpStructureV3Client` 已实现）：
+
+```
+POST {endpoint}              multipart: file + model=PP-StructureV3 + optionalPayload(JSON 字符串)
+200  {"code":0,"data":{"jobId":"..."}}
+GET  {endpoint}/{jobId}      每 2 秒轮询：pending → running → done / failed
+done → data.resultUrl.jsonUrl → 下载 jsonl → 每行 result.layoutParsingResults[].markdown.text
+failed → 取 data.errorMsg 抛 502，由上层降级到文本层
+```
+
+> 本地 `mvn spring-boot:run` **不会自动读 `.env`**，需要先 `export OCR_STRUCTURE_ENDPOINT=... OCR_STRUCTURE_API_KEY=...`；
+> `docker compose` 会读 `.env`。改完配置必须重启后端才生效。
+
+同步模式的请求体：
 
 ```json
 {"file": "<base64>", "fileType": 0, "useTableRecognition": true,
  "useFormulaRecognition": false, "useDocOrientationClassify": false, "useDocUnwarping": false}
 ```
 
-`fileType`：`0`=PDF、`1`=图片。鉴权默认按 `Authorization: token <key>` 发送
-（`OCR_STRUCTURE_AUTH_SCHEME` 可改为 `Bearer` 或 `none`）。
+`fileType`：`0`=PDF、`1`=图片。鉴权按 `Authorization: <scheme> <key>` 发送
+（`OCR_STRUCTURE_AUTH_SCHEME` 取 `token` / `bearer` / `none`，星河社区服务用 `bearer`）。
 
 响应兼容：
 

@@ -82,21 +82,39 @@
         面试开始后仍可更新，导师看到的始终是最新版本。文件仅本人与报考你的导师可见，不对外公开。
       </p>
 
-      <!-- 解析出的技能标签：导师端 AI 初评用的是同一套标签 -->
-      <div v-if="meta.uploaded && (meta.tags || []).length" class="tag-block">
+      <!-- 简历解析结果：技术栈 + 经历 + 性格特质，导师端 AI 初评用的是同一份画像 -->
+      <div v-if="meta.uploaded" class="tag-block">
         <div class="tag-head">
-          <span class="tag-title">简历解析出的技能标签</span>
-          <span class="tiny">{{ meta.tags.length }} 项 · 正文 {{ meta.textChars || 0 }} 字</span>
+          <span class="tag-title">简历解析结果</span>
+          <span class="tiny">
+            {{ (meta.tags || []).length }} 项技能 · 正文 {{ meta.textChars || 0 }} 字
+          </span>
         </div>
-        <div class="tag-cloud">
-          <span v-for="tag in meta.tags" :key="tag.name" class="tag-pill" :title="tag.category">{{ tag.name }}</span>
-        </div>
-      </div>
-      <div v-else-if="meta.uploaded" class="tag-block">
-        <div class="tag-head">
-          <span class="tag-title">简历解析出的技能标签</span>
-        </div>
-        <p class="tag-empty">暂未从简历正文识别到技术关键词，可在简历里明确写出用过的语言、框架和项目。</p>
+
+        <template v-if="(meta.tags || []).length">
+          <div class="sub-title">技能 / 技术栈</div>
+          <div class="tag-cloud">
+            <span v-for="tag in meta.tags" :key="tag.name" class="tag-pill" :title="tag.category">{{ tag.name }}</span>
+          </div>
+        </template>
+
+        <template v-if="experiences.length">
+          <div class="sub-title">项目与实践经历</div>
+          <ul class="exp-list">
+            <li v-for="(item, index) in experiences" :key="index">{{ item }}</li>
+          </ul>
+        </template>
+
+        <template v-if="traits.length">
+          <div class="sub-title">性格与特质</div>
+          <div class="trait-cloud">
+            <span v-for="trait in traits" :key="trait" class="trait-pill">{{ trait }}</span>
+          </div>
+        </template>
+
+        <p v-if="!meta.tags?.length && !experiences.length && !traits.length" class="tag-empty">
+          暂未从简历正文识别到有效信息，可在简历里写清用过的语言、框架、做过的项目与个人特点。
+        </p>
       </div>
     </section>
 
@@ -137,6 +155,8 @@ const tips = [
 ]
 
 const meta = reactive({ uploaded: false, fileName: '', sizeBytes: null, uploadedAt: null })
+const experiences = computed(() => meta.profile?.experiences || [])
+const traits = computed(() => meta.profile?.traits || [])
 const loading = ref(false)
 const uploading = ref(false)
 const percent = ref(0)
@@ -272,6 +292,44 @@ onMounted(load)
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.sub-title {
+  margin: 14px 0 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--label-3);
+  letter-spacing: 0.02em;
+}
+
+.exp-list {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.exp-list li {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--label-1);
+}
+
+.trait-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.trait-pill {
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(52, 199, 89, 0.12);
+  color: var(--ios-green-dark);
+  white-space: nowrap;
 }
 
 .tag-pill {
