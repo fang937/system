@@ -50,14 +50,17 @@
           <el-icon :size="19"><Menu /></el-icon>
         </button>
 
-        <div class="phase-pill" :class="phaseState">
-          <span class="dot" />
-          <span v-if="store.currentPhase">
-            第 {{ store.currentRound }} 轮 · {{ store.currentPhase.name }}
-          </span>
-          <span v-else>当前无进行中阶段</span>
+        <div class="phase-badge" :class="phaseState">
+          <span class="pb-dot" />
+          <div class="pb-text">
+            <span class="pb-label">当前阶段</span>
+            <span v-if="store.currentPhase" class="pb-name">
+              第 {{ store.currentRound }} 轮 · {{ store.currentPhase.name }}
+            </span>
+            <span v-else class="pb-name">当前无进行中阶段</span>
+          </div>
+          <span v-if="store.currentPhase" class="pb-count">{{ countdownText }}</span>
         </div>
-        <div v-if="store.currentPhase" class="countdown">{{ countdownText }}</div>
 
         <div class="spacer" />
 
@@ -531,68 +534,91 @@ onBeforeUnmount(() => {
   display: none;
 }
 
-.phase-pill {
+/* 顶栏「当前阶段」标识：进行中时为实色渐变，确保一眼看到 */
+.phase-badge {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 30px;
+  gap: 9px;
+  height: 38px;
   padding: 0 12px;
-  border-radius: var(--radius-pill);
+  border-radius: 12px;
   background: var(--fill-1);
   color: var(--label-2);
-  font-size: 12.5px;
-  font-weight: 500;
-  max-width: 44vw;
+  max-width: 46vw;
+  transition: background 0.3s var(--ease-ios), box-shadow 0.3s var(--ease-ios);
 }
 
-.phase-pill > span:last-child {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.phase-pill .dot {
-  width: 6px;
-  height: 6px;
+.phase-badge .pb-dot {
+  width: 8px;
+  height: 8px;
   flex: none;
   border-radius: 50%;
   background: currentColor;
 }
 
-.phase-pill.active {
-  background: rgba(52, 199, 89, 0.14);
-  color: var(--ios-green-dark);
+.phase-badge .pb-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.18;
 }
 
-.phase-pill.active .dot {
-  animation: dot-pulse 2.2s var(--ease-ios) infinite;
+.phase-badge .pb-label {
+  font-size: 9.5px;
+  opacity: 0.72;
+  letter-spacing: 0.08em;
+}
+
+.phase-badge .pb-name {
+  font-size: 12.5px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.phase-badge .pb-count {
+  flex: none;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.phase-badge.active {
+  background: linear-gradient(135deg, #22b455, #159fb5);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(34, 180, 85, 0.32);
+}
+
+.phase-badge.active .pb-dot {
+  background: #fff;
+  animation: dot-pulse 1.8s var(--ease-ios) infinite;
+}
+
+.phase-badge.active .pb-count {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.phase-badge.pending {
+  background: rgba(255, 149, 0, 0.14);
+  color: var(--ios-orange-dark);
+}
+
+.phase-badge.closed {
+  background: var(--fill-1);
+  color: var(--label-3);
 }
 
 @keyframes dot-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.4);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.55);
   }
   55% {
-    box-shadow: 0 0 0 5px rgba(52, 199, 89, 0);
+    box-shadow: 0 0 0 6px rgba(255, 255, 255, 0);
   }
-}
-
-.phase-pill.pending {
-  background: rgba(255, 149, 0, 0.14);
-  color: var(--ios-orange-dark);
-}
-
-.phase-pill.closed {
-  background: var(--fill-1);
-  color: var(--label-3);
-}
-
-.countdown {
-  font-size: 12px;
-  color: var(--label-3);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.01em;
 }
 
 .spacer {

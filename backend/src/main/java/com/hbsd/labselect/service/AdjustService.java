@@ -48,6 +48,7 @@ public class AdjustService {
                        sp.major, sp.class_name AS className, sp.gpa, sp.priority_score AS priorityScore,
                        a.id AS applicationId, a.round_no AS roundNo,
                        a.accept_lab_adjust AS acceptLabAdjust, a.accept_global_adjust AS acceptGlobalAdjust,
+                       CASE WHEN a.accept_lab_adjust = 1 OR a.accept_global_adjust = 1 THEN 1 ELSE 0 END AS autoAdjustable,
                        (SELECT GROUP_CONCAT(DISTINCT l.name ORDER BY l.id SEPARATOR ' / ')
                           FROM tutors t JOIN labs l ON l.id = t.lab_id
                          WHERE t.id IN (a.tutor_1_id, a.tutor_2_id, a.tutor_3_id)) AS appliedLabs
@@ -79,6 +80,7 @@ public class AdjustService {
         List<Map<String, Object>> students = unmatched();
         int labAdjusted = 0;
         int globalAdjusted = 0;
+        int manualPending = 0;
         List<String> details = new ArrayList<>();
 
         for (Map<String, Object> student : students) {
@@ -87,6 +89,13 @@ public class AdjustService {
                     : ((Number) student.get("applicationId")).longValue();
             boolean acceptLab = toBool(student.get("acceptLabAdjust"));
             boolean acceptGlobal = toBool(student.get("acceptGlobalAdjust"));
+
+            // 初选未录取且两项调剂意愿都不服从的学生，不做任何自动调剂，留给管理员人工处理
+            if (!acceptLab && !acceptGlobal) {
+                manualPending++;
+                details.add(student.get("studentName") + " → 不服从调剂，跳过自动调剂，等待管理员处理");
+                continue;
+            }
 
             Map<String, Object> target = null;
             int type = 0;
@@ -115,6 +124,7 @@ public class AdjustService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("labAdjusted", labAdjusted);
         result.put("globalAdjusted", globalAdjusted);
+        result.put("manualPending", manualPending);
         result.put("unmatchedLeft", Math.max(0, students.size() - labAdjusted - globalAdjusted));
         result.put("details", details);
         return result;

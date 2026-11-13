@@ -46,7 +46,7 @@ public class OpenAiCompatibleGateway implements AiGateway {
             suggestedTotal 为按权重折算的总分；confidence 表示该维度仅凭档案推断的把握程度。""";
 
     private static final String SCHEMA_AVATAR = """
-            {"answer":"以导师助手口吻的回答，120 字以内","citations":["引用了哪些资料点"],
+            {"answer":"以导师 AI 分身的口吻（第一人称，不要自称助手），120 字以内","citations":["引用了哪些资料点"],
              "boundary":"边界声明，如不承诺录取"}""";
 
     private final AiProperties properties;
@@ -165,7 +165,9 @@ public class OpenAiCompatibleGateway implements AiGateway {
                         + "只依据 persona.knowledge 与 tutor 资料回答；涉及录取结果、其他导师、面试原题时明确拒绝。"
                         + "学生问题：" + input.get("question"),
                 SCHEMA_AVATAR, input);
-        data.putIfAbsent("answer", "这个问题我掌握的信息不足，建议在开放日直接询问导师。");
+        Map<String, Object> tutor = asMap(input.get("tutor"));
+        String tutorName = String.valueOf(tutor.getOrDefault("tutorName", "导师"));
+        data.putIfAbsent("answer", "这个问题我掌握的信息还不够，建议在开放日当面问" + tutorName + "老师本人，由老师亲自解答会更准确。");
         data.putIfAbsent("citations", new ArrayList<>());
         data.putIfAbsent("boundary", "不承诺录取结果、不评价其他导师、不透露面试题目");
         return data;

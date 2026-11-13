@@ -28,6 +28,9 @@
       </template>
     </el-alert>
 
+    <!-- 双选流程时间轴：填报窗口结束后此页只读 -->
+    <SelectionTimeline :phases="store.phase?.phases || []" :round="round" compact class="timeline-block" />
+
     <!-- AI 面试技巧分析（预留真实模型接口，未配置 Key 时为规则引擎预览） -->
     <section class="ai-card ai-teal">
       <div class="ai-head">
@@ -116,7 +119,7 @@
             <div class="choice-name">{{ choice.tutorName }}<span class="muted"> · {{ choice.labName }}</span></div>
             <div class="tiny">{{ choice.title }} · {{ choice.researchDirection }}</div>
           </div>
-          <span class="tiny">预计招收 {{ choice.quota }} 名 · 已报 {{ choice.applicantCount ?? 0 }} 人</span>
+          <span class="tiny">预计招收 {{ choice.quota }} 名</span>
         </div>
       </div>
       <div class="flags">
@@ -166,10 +169,6 @@
           </div>
           <div class="quota-bar">
             <span class="quota-text">预计招收 {{ tutor.quota }} 名</span>
-            <div class="quota-track">
-              <div class="quota-fill" :style="{ width: applyPercent(tutor) + '%' }" />
-            </div>
-            <span class="mono">已报 {{ tutor.applicantCount }} 人</span>
           </div>
         </div>
       </div>
@@ -198,6 +197,7 @@ import { api } from '../../api/index.js'
 import { useUserStore } from '../../stores/user.js'
 import { applicationStatusMap, countdown, fmtTime } from '../../utils/labels.js'
 import { labTone } from '../../utils/tones.js'
+import SelectionTimeline from '../../components/SelectionTimeline.vue'
 
 const store = useUserStore()
 
@@ -234,12 +234,6 @@ const pickable = computed(() =>
 
 function statusOf(value) {
   return applicationStatusMap[value] || { label: value || '—', type: 'info' }
-}
-
-function applyPercent(tutor) {
-  // 进度条表达「已报人数 / 预计招收名额」的竞争度，100% 封顶
-  if (!tutor.quota) return 0
-  return Math.min(100, Math.round(((tutor.applicantCount || 0) / tutor.quota) * 100))
 }
 
 function toneOf(tutor) {
@@ -331,6 +325,11 @@ onMounted(load)
 </script>
 
 <style scoped>
+.timeline-block {
+  display: block;
+  margin-bottom: 14px;
+}
+
 .choice-list {
   display: flex;
   flex-direction: column;

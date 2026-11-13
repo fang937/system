@@ -19,13 +19,22 @@
       </template>
     </el-alert>
 
+    <!-- 双选流程时间轴（与管理员端同一份阶段数据，只读） -->
+    <SelectionTimeline
+      v-if="store.isStudent"
+      :phases="store.phase?.phases || []"
+      :round="store.currentRound"
+      compact
+      class="timeline-block"
+    />
+
     <!-- AI 实训室推荐：技能匹配 + 名额 + 竞争度 -->
     <section v-if="store.isStudent" class="ai-card">
       <div class="ai-head">
         <div class="ai-mark">AI</div>
         <div>
           <div class="ai-title">AI 实训室推荐</div>
-          <div class="ai-meta">按技能标签、名额余量与报考竞争度排序</div>
+          <div class="ai-meta">按技能标签与方向匹配度排序</div>
         </div>
         <span v-if="aiEngine" class="ai-badge">{{ aiEngine }}</span>
         <div class="spacer" />
@@ -133,7 +142,16 @@
     </div>
 
     <div v-loading="loading" class="tutor-grid">
-      <div v-for="tutor in filtered" :key="tutor.tutorId" class="tutor-card" :class="'tone-' + toneOf(tutor)">
+      <div
+        v-for="tutor in filtered"
+        :key="tutor.tutorId"
+        class="tutor-card clickable"
+        :class="'tone-' + toneOf(tutor)"
+        role="button"
+        tabindex="0"
+        @click="openDetail(tutor)"
+        @keyup.enter="openDetail(tutor)"
+      >
         <div class="tutor-head">
           <div class="avatar">{{ tutor.tutorName.slice(0, 1) }}</div>
           <div>
@@ -147,30 +165,75 @@
 
         <div class="chips">
           <span class="chip">{{ tutor.researchDirection }}</span>
-          <span class="chip">报考 {{ tutor.applicantCount }} 人</span>
         </div>
 
         <div class="intro">{{ tutor.intro }}</div>
 
         <div class="quota-bar">
-          <span>名额</span>
-          <div class="quota-track">
-            <div
-              class="quota-fill"
-              :class="'tone-' + usageTone(usedPercent(tutor))"
-              :style="{ width: usedPercent(tutor) + '%' }"
-            />
-          </div>
-          <span class="mono">{{ tutor.quota - tutor.remainingQuota }}/{{ tutor.quota }}</span>
+          <span class="quota-text">预计招收 {{ tutor.quota }} 名</span>
+          <span class="detail-hint">查看技能详情 ›</span>
         </div>
 
-        <button v-if="store.isStudent" class="ask-avatar" type="button" @click="openAvatar(tutor)">
+        <button v-if="store.isStudent" class="ask-avatar" type="button" @click.stop="openAvatar(tutor)">
           <el-icon><ChatDotRound /></el-icon>
           <span>问问 {{ tutor.tutorName }} 老师的 AI 分身</span>
         </button>
       </div>
       <div v-if="!loading && !filtered.length" class="empty" style="grid-column: 1 / -1">暂无导师数据</div>
     </div>
+
+    <!-- 导师详情：技能标签 + 完整介绍 + 招生信息 -->
+    <el-drawer v-model="detailOpen" :with-header="false" size="440px" class="tutor-detail">
+      <div v-if="detailTutor" class="detail-body">
+        <header class="detail-head">
+          <div class="detail-avatar" :class="'tone-' + toneOf(detailTutor)">{{ detailTutor.tutorName.slice(0, 1) }}</div>
+          <div class="detail-who">
+            <div class="detail-name">
+              {{ detailTutor.tutorName }}
+              <span class="title-tag">{{ detailTutor.title }}</span>
+            </div>
+            <div class="detail-meta">{{ detailTutor.labName }}</div>
+          </div>
+          <button class="detail-close" type="button" aria-label="关闭" @click="detailOpen = false">×</button>
+        </header>
+
+        <section class="detail-block">
+          <div class="block-title">
+            技能 / 技术栈
+            <span class="block-count">{{ detailSkills.length }} 项</span>
+          </div>
+          <div class="skill-tags">
+            <span v-for="skill in detailSkills" :key="skill" class="skill-tag">{{ skill }}</span>
+          </div>
+        </section>
+
+        <section class="detail-block">
+          <div class="block-title">导师介绍</div>
+          <p class="detail-intro">{{ detailTutor.intro || '这位老师暂未填写介绍。' }}</p>
+        </section>
+
+        <section class="detail-block">
+          <div class="block-title">招生信息</div>
+          <div class="kv-row">
+            <span>预计招收</span>
+            <b>{{ detailTutor.quota }} 名</b>
+          </div>
+          <div class="kv-row">
+            <span>所属实训室</span>
+            <b>{{ detailTutor.labName }}</b>
+          </div>
+          <div class="kv-row">
+            <span>实训室方向</span>
+            <b class="kv-long">{{ detailTutor.labDescription || '—' }}</b>
+          </div>
+        </section>
+
+        <footer class="detail-actions">
+          <el-button @click="askFromDetail">问 AI 分身</el-button>
+          <el-button type="primary" @click="goApply">去填报志愿</el-button>
+        </footer>
+      </div>
+    </el-drawer>
 
     <AiAvatarDrawer v-model="avatarOpen" :tutor="avatarTutor" />
   </div>
@@ -182,8 +245,9 @@ import { useRouter } from 'vue-router'
 import { api } from '../../api/index.js'
 import { useUserStore } from '../../stores/user.js'
 import { fmtTime } from '../../utils/labels.js'
-import { labTone, usageTone } from '../../utils/tones.js'
+import { labTone } from '../../utils/tones.js'
 import AiAvatarDrawer from '../../components/AiAvatarDrawer.vue'
+import SelectionTimeline from '../../components/SelectionTimeline.vue'
 
 const router = useRouter()
 const store = useUserStore()
@@ -252,11 +316,6 @@ const filtered = computed(() =>
   activeLab.value === 0 ? tutors.value : tutors.value.filter((t) => t.labId === activeLab.value)
 )
 
-function usedPercent(tutor) {
-  if (!tutor.quota) return 0
-  return Math.min(100, Math.round(((tutor.quota - tutor.remainingQuota) / tutor.quota) * 100))
-}
-
 function toneOf(tutor) {
   return labTone(tutor.labId, tutor.labName)
 }
@@ -285,10 +344,40 @@ async function runRecommend() {
 function openAvatar(tutor) {
   avatarTutor.value = {
     ...tutor,
-    displayName: `${tutor.tutorName}老师助手`,
+    displayName: `${tutor.tutorName}老师的 AI 分身`,
     greeting: `你好，我是${tutor.tutorName}老师的 AI 分身，可以聊聊${tutor.researchDirection}方向、项目要求与面试准备。`
   }
   avatarOpen.value = true
+}
+
+/* ---- 导师详情抽屉 ---- */
+const detailOpen = ref(false)
+const detailTutor = ref(null)
+
+/** 把「Java/Spring Boot、Vue、React」这类方向串拆成技能标签 */
+const detailSkills = computed(() => {
+  const text = detailTutor.value?.researchDirection || ''
+  return text
+    .split(/[、，,]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+})
+
+function openDetail(tutor) {
+  detailTutor.value = tutor
+  detailOpen.value = true
+}
+
+function askFromDetail() {
+  const tutor = detailTutor.value
+  if (!tutor) return
+  detailOpen.value = false
+  openAvatar(tutor)
+}
+
+function goApply() {
+  detailOpen.value = false
+  router.push('/student/application')
 }
 
 onMounted(async () => {
@@ -309,6 +398,15 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.timeline-block {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.quota-text {
+  white-space: nowrap;
+}
+
 /* ---- 实训室概览 ---- */
 .lab-overview {
   background: var(--surface);
@@ -542,5 +640,158 @@ onMounted(async () => {
   .lab-cards {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---- 导师卡片可点击 + 详情抽屉 ---- */
+.tutor-card.clickable {
+  cursor: pointer;
+  transition: transform 0.18s var(--ease-ios), box-shadow 0.18s var(--ease-ios);
+}
+
+.tutor-card.clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.09);
+}
+
+.detail-hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--label-3);
+  white-space: nowrap;
+}
+
+.tutor-detail :deep(.el-drawer__body) {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 100%;
+}
+
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.detail-avatar {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  font-weight: 600;
+  background: var(--tone-soft, rgba(88, 86, 214, 0.12));
+  color: var(--tone-deep, #4b49b8);
+}
+
+.detail-who {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail-name {
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--label-1);
+}
+
+.detail-meta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--label-3);
+}
+
+.detail-close {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: var(--fill-1);
+  color: var(--label-2);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.block-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--label-2);
+}
+
+.block-count {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--label-3);
+}
+
+.skill-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.skill-tag {
+  font-size: 12.5px;
+  padding: 4px 11px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 122, 255, 0.1);
+  color: var(--ios-blue);
+}
+
+.detail-intro {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--label-1);
+}
+
+.kv-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 7px 0;
+  font-size: 12.5px;
+  color: var(--label-2);
+  border-bottom: 1px dashed var(--separator);
+}
+
+.kv-row:last-child {
+  border-bottom: none;
+}
+
+.kv-row b {
+  margin-left: auto;
+  max-width: 62%;
+  text-align: right;
+  font-weight: 600;
+  color: var(--label-1);
+}
+
+.detail-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--separator);
+}
+
+.detail-actions .el-button {
+  flex: 1;
+  margin-left: 0;
 }
 </style>

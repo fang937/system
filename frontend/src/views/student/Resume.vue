@@ -81,6 +81,23 @@
       <p class="upload-note">
         面试开始后仍可更新，导师看到的始终是最新版本。文件仅本人与报考你的导师可见，不对外公开。
       </p>
+
+      <!-- 解析出的技能标签：导师端 AI 初评用的是同一套标签 -->
+      <div v-if="meta.uploaded && (meta.tags || []).length" class="tag-block">
+        <div class="tag-head">
+          <span class="tag-title">简历解析出的技能标签</span>
+          <span class="tiny">{{ meta.tags.length }} 项 · 正文 {{ meta.textChars || 0 }} 字</span>
+        </div>
+        <div class="tag-cloud">
+          <span v-for="tag in meta.tags" :key="tag.name" class="tag-pill" :title="tag.category">{{ tag.name }}</span>
+        </div>
+      </div>
+      <div v-else-if="meta.uploaded" class="tag-block">
+        <div class="tag-head">
+          <span class="tag-title">简历解析出的技能标签</span>
+        </div>
+        <p class="tag-empty">暂未从简历正文识别到技术关键词，可在简历里明确写出用过的语言、框架和项目。</p>
+      </div>
     </section>
 
     <section class="card card-pad">
@@ -231,6 +248,49 @@ onMounted(load)
 </script>
 
 <style scoped>
+/* 简历技能标签 */
+.tag-block {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--separator);
+}
+
+.tag-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+.tag-title {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--label-2);
+}
+
+.tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-pill {
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 122, 255, 0.1);
+  color: var(--ios-blue);
+  white-space: nowrap;
+}
+
+.tag-empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--label-3);
+}
+
 /* 流程条 */
 .steps {
   display: grid;
@@ -436,8 +496,7 @@ onMounted(load)
   margin: 14px 0 0;
   font-size: 11.5px;
   line-height: 1.7;
-  color: var(--label-3);
-}
+  color: var(--label-3);}
 
 /* 建议 */
 .tip-grid {

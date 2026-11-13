@@ -264,7 +264,9 @@ async function send() {
     if (data.boundary) boundary.value = data.boundary
     messages.value.push({
       role: 'assistant',
-      content: data.answer || '这个问题我暂时回答不了，建议在开放日直接问老师。',
+      content:
+        data.answer ||
+        `这个问题我暂时回答不了，建议在开放日当面问${props.tutor?.tutorName || ''}老师本人，由老师亲自解答会更准确。`,
       citations: data.citations || []
     })
   } catch (error) {

@@ -15,6 +15,8 @@
       </div>
     </div>
 
+    <SelectionTimeline :phases="phases" :round="round" can-edit class="timeline-block" />
+
     <el-card shadow="never" class="card card-pad">
       <div class="phase-list">
         <div v-for="phase in phases" :key="phase.id" class="phase-row" :class="phase.state.toLowerCase()">
@@ -67,6 +69,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { api } from '../../api/index.js'
 import { useUserStore } from '../../stores/user.js'
+import SelectionTimeline from '../../components/SelectionTimeline.vue'
 import { countdown, fmtTime, phaseStateMap } from '../../utils/labels.js'
 
 const store = useUserStore()
@@ -165,6 +168,11 @@ onMounted(load)
 </script>
 
 <style scoped>
+.timeline-block {
+  display: block;
+  margin-bottom: 14px;
+}
+
 .head-tools {
   display: flex;
   align-items: center;

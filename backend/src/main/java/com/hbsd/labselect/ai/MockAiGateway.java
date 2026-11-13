@@ -307,7 +307,9 @@ public class MockAiGateway implements AiGateway {
         String answer;
         List<String> citations = new ArrayList<>();
         if (containsAny(question, "方向", "研究", "做什么", "项目")) {
-            answer = "我们组主要围绕" + direction + "展开。" + intro
+            String tutorName = defaultIfBlank(str(tutor, "tutorName"), "导师");
+            answer = "我们组主要围绕" + direction + "展开。"
+                    + "更细的项目、带教方式和日常节奏，开放日可以请" + tutorName + "老师当面讲讲。"
                     + "如果你对其中某一块感兴趣，可以准备一个相关的小项目或课程作业来聊。";
             citations.add("研究方向：" + direction);
             citations.add("导师介绍：" + intro);
@@ -326,9 +328,10 @@ public class MockAiGateway implements AiGateway {
                     + "但准备好 1~2 个能讲透的项目基本就够用了。";
             citations.add("评分维度：专业基础 / 实践技能 / 学习潜力 / 动机匹配 / 表达沟通");
         } else {
-            answer = "这个问题我掌握的信息还不够，建议在开放日直接问" + defaultIfBlank(str(persona, "displayName"), "老师")
-                    + "。我能确定的是：" + intro;
-            citations.add("导师介绍：" + intro);
+            String tutorName = defaultIfBlank(str(tutor, "tutorName"), "导师");
+            answer = "这个问题我掌握的信息还不够，建议在开放日当面问" + tutorName + "老师本人，由老师亲自解答更准确。"
+                    + "我能确定的是：" + tutorName + "老师的方向是" + direction + "。";
+            citations.add("研究方向：" + direction);
         }
 
         Map<String, Object> data = new LinkedHashMap<>();

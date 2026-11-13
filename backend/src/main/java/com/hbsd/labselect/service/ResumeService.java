@@ -2,6 +2,7 @@ package com.hbsd.labselect.service;
 
 import com.hbsd.labselect.common.BizException;
 import com.hbsd.labselect.common.UserContext;
+import com.hbsd.labselect.ai.ResumeTagService;
 import com.hbsd.labselect.ocr.ResumeTextService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +46,7 @@ public class ResumeService {
 
     private final JdbcTemplate jdbc;
     private final ResumeTextService resumeTextService;
+    private final ResumeTagService resumeTagService;
 
     @Value("${app.upload.resume-dir:./uploads/resumes}")
     private String resumeDir;
@@ -70,6 +72,12 @@ public class ResumeService {
         }
         result.putAll(rows.get(0));
         result.put("downloadPath", "/api/student/resume/file");
+
+        // 解析正文并抽取技能标签，学生端可在上传后直接看到自己的技能视图
+        ResumeTextService.Extract extract = resumeTextService.extract(studentId);
+        result.put("textChars", extract.chars());
+        result.put("textEngine", extract.engine());
+        result.put("tags", resumeTagService.tags(extract.text()));
         return result;
     }
 

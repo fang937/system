@@ -23,6 +23,11 @@
         <div class="value mono">{{ totalRemaining }}</div>
         <div class="hint">{{ vacancies.length }} 位导师仍有名额</div>
       </div>
+      <div class="stat tone-orange">
+        <div class="label">需人工处理</div>
+        <div class="value mono">{{ manualCount }}</div>
+        <div class="hint">不服从调剂，自动调剂会跳过</div>
+      </div>
       <div class="stat">
         <div class="label">三级顺序</div>
         <div class="value" style="font-size: 15px; line-height: 1.6">室内 → 全院 → 人工</div>
@@ -46,9 +51,14 @@
       <el-alert v-if="lastResult" class="result" :closable="false" type="success" show-icon>
         <template #title>
           本轮执行完成：室内调剂 {{ lastResult.labAdjusted }} 人，全院调剂 {{ lastResult.globalAdjusted }} 人，剩余未匹配
-          {{ lastResult.unmatchedLeft }} 人
+          {{ lastResult.unmatchedLeft }} 人<template v-if="lastResult.manualPending">
+            ；其中 <strong>{{ lastResult.manualPending }}</strong> 人不服从调剂，已跳过自动调剂，等待人工处理</template
+          >
         </template>
       </el-alert>
+      <p class="run-note">
+        被志愿导师淘汰后，<b>不服从任何调剂</b>的学生不会进入自动调剂，只会留在调剂池等待管理员人工约谈分配。
+      </p>
     </el-card>
 
     <el-card shadow="never" class="card card-pad">
@@ -77,6 +87,12 @@
             <el-tag size="small" :type="row.acceptGlobalAdjust ? 'success' : 'info'" effect="plain" style="margin-left: 4px">
               全院
             </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="自动调剂" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="Number(row.autoAdjustable) === 1" size="small" type="success" effect="light">可自动</el-tag>
+            <el-tag v-else size="small" type="warning" effect="light">需人工</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="110" align="right">
@@ -141,6 +157,9 @@ const manual = reactive({ tutorId: null, reason: '' })
 
 const adjustOpen = computed(() => store.currentPhase?.code === 'ADJUST' && store.currentPhase?.state === 'ACTIVE')
 const totalRemaining = computed(() => vacancies.value.reduce((sum, item) => sum + (item.remainingQuota || 0), 0))
+
+// 不服从任何调剂的学生：自动调剂不会处理，需管理员人工约谈分配
+const manualCount = computed(() => students.value.filter((s) => Number(s.autoAdjustable) !== 1).length)
 
 async function load() {
   loading.value = true
@@ -211,6 +230,18 @@ onMounted(load)
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.run-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--label-2);
+}
+
+.run-note b {
+  color: var(--ios-orange-dark);
+  font-weight: 650;
 }
 
 .result {

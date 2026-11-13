@@ -150,6 +150,9 @@ docker compose down -v             # 连数据卷一起删，下次启动重新�
 | 单 Offer 自动确认 | 确认阶段内，只收到 1 个待确认 Offer 的学生由定时任务自动确认 |
 | 一人一轮一个 Offer | 确认时作废同轮其他 Offer 并释放名额、触发递补 |
 | 三级调剂 | `AdjustService`：按 `priority_score` 降序，先匹配填报过的实训室，再全院，最后人工 |
+| 调剂意愿 | 两项调剂都不服从的学生**不参与自动调剂**，只计入 `manualPending` 留在调剂池，由管理员人工约谈分配；管理端用「需人工 / 可自动」标签区分 |
+| 双选时间轴 | `SelectionTimeline` 组件读 `/api/meta/phase`，管理端完整版（可改时间）、学生端与教师端紧凑版共用同一份阶段数据；顶栏常驻「当前阶段」徽章（进行中为绿色渐变 + 剩余时间） |
+| 简历技能标签 | `ResumeTagService` 按 8 类词表从简历正文抽标签（长词优先、区间不重叠，兼容 `SpringBoot` 无空格写法），学生端「我的简历」与教师端初评共用，不依赖大模型 |
 | 分端登录 | `POST /api/auth/login` 携带 `portal`（`STUDENT` / `TUTOR` / `ADMIN`），与 `users.role` 不匹配返回 403；成功返回 `{token, user:{role, caps, labId, tutorId}, phase}` |
 | AI 能力 | 四类能力走 `AiGateway` 单一接入点，**支持多通道（多把 Key）**：某个通道额度耗尽自动切换下一个，全部耗尽时前端显示红色提示，管理端「全局看板 → AI 通道」可查看状态并手动切换；未配置 Key 时自动回落内置规则引擎（结构一致）。评分标准落在 `score_rubrics`，教师分身身份落在 `ai_personas`。详见 `docs/AI集成说明.md` |
 | 简历存储 | 学生上传 PDF/DOC/DOCX（≤10MB），落盘 `backend/uploads/resumes`（已 gitignore），元数据存 `student_resumes`；下载走鉴权接口，导师仅能查看报考自己的学生。AI 初评会先抽 PDF 文本层，扫描件走 **PP-StructureV3** 文档解析（`OCR_STRUCTURE_ENDPOINT`，返回结构化 Markdown），失败再降级普通 OCR；正文缓存在 `resume_texts`，重新上传即失效 |
@@ -168,8 +171,10 @@ system/
 │       │   ├── config/              Web / Jackson / Password 配置
 │       │   ├── entity/              12 张表对应实体
 │       │   ├── mapper/              MyBatis-Plus Mapper（含名额原子扣减 SQL）
-│       │   ├── service/             Phase / Auth / Student / Workbench / Offer / Adjust / Admin
-│       │   ├── controller/          Auth / Meta / Student / Workbench / Admin / Notification
+│       │   ├── service/             Phase / Auth / Student / Workbench / Offer / Adjust / Admin / Resume
+│       │   ├── ai/                  AiService、多通道网关、ResumeTagService（简历技能标签）
+│       │   ├── ocr/                 文本层 / PP-StructureV3 / 普通 OCR 兜底
+│       │   ├── controller/          Auth / Meta / Student / Workbench / Admin / Notification / Message / Ai
 │       │   ├── scheduler/           Offer 超时与自动确认
 │       │   └── init/                演示数据初始化
 │       └── resources/schema.sql     建表脚本（12 张表）
@@ -177,9 +182,10 @@ system/
 │   ├── Dockerfile                   # Node 20 构建 → Nginx 托管
 │   ├── nginx.conf                   # SPA history 回退 + /api 反向代理
 │   └── src/
-│       ├── layout/                  MainLayout（按 caps 渲染菜单 + 阶段倒计时）
+│       ├── layout/                  MainLayout（按 caps 渲染菜单 + 当前阶段徽章）
+│       ├── components/              SelectionTimeline（三端时间轴）、AiAvatarDrawer（分身/留言）
 │       ├── views/student/           导师与方向、我的志愿、我的简历、我的 Offer、录取结果
-│       ├── views/workbench/         报考我的学生、我的录取、排期、本室进度、室内调剂
+│       ├── views/workbench/         报考我的学生、我的录取、排期、本室进度、室内调剂、私信
 │       ├── views/admin/             全局看板、阶段与轮次、导师与实训室、统筹调剂、公示
 │       ├── api/ router/ stores/ utils/
 │       └── styles/

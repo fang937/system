@@ -8,6 +8,13 @@
       <el-button :icon="Refresh" @click="load">刷新</el-button>
     </div>
 
+    <SelectionTimeline
+      :phases="store.phase?.phases || []"
+      :round="store.currentRound"
+      compact
+      class="timeline-block"
+    />
+
     <div class="stat-grid">
       <div class="stat tone-blue">
         <div class="label"><el-icon><Tickets /></el-icon>总名额</div>
@@ -154,6 +161,15 @@
             </span>
           </div>
 
+          <template v-if="(review.resumeTags || []).length">
+            <div class="ai-section-title">简历技能标签（{{ review.resumeTags.length }} 项）</div>
+            <div class="skill-cloud">
+              <span v-for="tag in review.resumeTags" :key="tag.name" class="skill-pill" :title="tag.category">
+                {{ tag.name }}
+              </span>
+            </div>
+          </template>
+
           <template v-if="(review.highlights || []).length">
             <div class="ai-section-title">亮点</div>
             <div class="ai-list">
@@ -249,6 +265,7 @@ import { api } from '../../api/index.js'
 import { useUserStore } from '../../stores/user.js'
 import { offerStatusMap } from '../../utils/labels.js'
 import { saveBlob } from '../../utils/download.js'
+import SelectionTimeline from '../../components/SelectionTimeline.vue'
 
 const store = useUserStore()
 const loading = ref(false)
@@ -446,6 +463,29 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.timeline-block {
+  display: block;
+  margin-bottom: 14px;
+}
+
+/* 简历技能标签 */
+.skill-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.skill-pill {
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 122, 255, 0.1);
+  color: var(--ios-blue);
+  white-space: nowrap;
+}
+
 .head-tools {
   display: flex;
   gap: 10px;

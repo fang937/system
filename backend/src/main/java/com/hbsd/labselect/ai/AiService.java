@@ -31,6 +31,7 @@ public class AiService {
     private final ObjectMapper objectMapper;
     private final PhaseService phaseService;
     private final ResumeTextService resumeTextService;
+    private final ResumeTagService resumeTagService;
 
     /* ---------------- 评分标准 ---------------- */
 
@@ -175,6 +176,12 @@ public class AiService {
         input.put("resume", resume);
 
         Map<String, Object> data = gateway.resumeReview(input);
+
+        // 简历技能标签：词表抽取，模型不可用时也能给导师端一个可读的技能视图
+        List<Map<String, Object>> resumeTags = resumeTagService.tags(extract.text());
+        data.put("resumeTags", resumeTags);
+        data.put("resumeTagNames", resumeTags.stream().map(t -> String.valueOf(t.get("name"))).toList());
+
         data.put("resumeDigest", Map.of(
                 "engine", extract.engine(),
                 "chars", extract.chars(),
@@ -326,7 +333,7 @@ public class AiService {
     }
 
     private String defaultDisplayName(Map<String, Object> tutor) {
-        return str(tutor.get("tutorName")) + "老师助手";
+        return str(tutor.get("tutorName")) + "老师的 AI 分身";
     }
 
     private String defaultGreeting(Map<String, Object> tutor) {
