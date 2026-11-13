@@ -62,6 +62,23 @@ public interface AiGateway {
         throw new BizException(400, "当前为单通道模式，无可切换的通道");
     }
 
+    /* ---- 管理端调试：模型列表 / 连通性测试 / 模型切换（仅真实通道实现支持） ---- */
+
+    /** 拉取该通道 API Key 下可用的模型列表 */
+    default List<String> listModels(String name) {
+        throw new BizException(400, "当前为规则引擎模式，没有真实的模型通道可调试");
+    }
+
+    /** 调试调用：用当前 Key 与模型发一次最小对话，返回 {ok, model, latencyMs, reply} 或 {ok:false, error} */
+    default Map<String, Object> testCall(String name) {
+        throw new BizException(400, "当前为规则引擎模式，没有真实的模型通道可调试");
+    }
+
+    /** 切换该通道使用的模型（运行时立即生效；持久化由 AiService 负责） */
+    default void setModel(String name, String model) {
+        throw new BizException(400, "当前为规则引擎模式，没有真实的模型通道可切换");
+    }
+
     /** 供实现类复用：把任意对象安全转为字符串列表 */
     @SuppressWarnings("unchecked")
     static List<String> asList(Object value) {

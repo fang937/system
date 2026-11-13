@@ -156,6 +156,9 @@ export const api = {
   aiResumeReview: (applicationId) => http.post('/ai/resume-review', { applicationId }, { skipErrorToast: true }),
   aiProviders: () => http.get('/ai/providers'),
   aiActivateProvider: (name) => http.post(`/ai/providers/${name}/activate`),
+  aiProviderModels: (name) => http.get(`/ai/providers/${name}/models`, { skipErrorToast: true }),
+  aiProviderTest: (name) => http.post(`/ai/providers/${name}/test`, null, { skipErrorToast: true }),
+  aiSetProviderModel: (name, model) => http.put(`/ai/providers/${name}/model`, { model }),
   ocrConfig: () => http.get('/admin/ocr-config'),
   updateOcrConfig: (provider) => http.put('/admin/ocr-config', { provider }),
 

@@ -140,6 +140,42 @@ public class MultiProviderAiGateway implements AiGateway {
         log.info("AI 通道已切换为 {}", activeName);
     }
 
+    /* ---------------- 管理端调试 ---------------- */
+
+    @Override
+    public List<String> listModels(String name) {
+        return requireGateway(name).listModels();
+    }
+
+    @Override
+    public Map<String, Object> testCall(String name) {
+        return requireGateway(name).testCall();
+    }
+
+    @Override
+    public void setModel(String name, String model) {
+        Slot slot = slotByName(name);
+        if (slot == null) {
+            throw new BizException("通道不存在：" + name);
+        }
+        if (model == null || model.isBlank()) {
+            throw new BizException("模型名不能为空");
+        }
+        slot.config.setModel(model.trim());
+        log.info("AI 通道 {} 模型切换为 {}", slot.config.getName(), model.trim());
+    }
+
+    private OpenAiCompatibleGateway requireGateway(String name) {
+        Slot slot = slotByName(name);
+        if (slot == null) {
+            throw new BizException("通道不存在：" + name);
+        }
+        if (slot.gateway == null) {
+            throw new BizException("通道「" + name + "」尚未配置 API Key");
+        }
+        return slot.gateway;
+    }
+
     /* ---------------- 调用与容错 ---------------- */
 
     private Map<String, Object> execute(Function<AiGateway, Map<String, Object>> call) {

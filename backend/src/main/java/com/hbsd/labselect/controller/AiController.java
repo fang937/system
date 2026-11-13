@@ -88,6 +88,28 @@ public class AiController {
         return R.ok();
     }
 
+    /** 管理员：拉取该通道 API Key 下的可用模型列表（用于模型下拉选择） */
+    @GetMapping("/providers/{name}/models")
+    @RequireRole("SYS_ADMIN")
+    public R<List<String>> providerModels(@PathVariable String name) {
+        return R.ok(aiService.providerModels(name));
+    }
+
+    /** 管理员：调试该通道——用当前 Key 与模型发一次最小对话，验证连通性 */
+    @PostMapping("/providers/{name}/test")
+    @RequireRole("SYS_ADMIN")
+    public R<Map<String, Object>> testProvider(@PathVariable String name) {
+        return R.ok(aiService.testProvider(name));
+    }
+
+    /** 管理员：切换该通道使用的模型，立即生效并持久化（重启后保留） */
+    @PutMapping("/providers/{name}/model")
+    @RequireRole("SYS_ADMIN")
+    public R<Void> setProviderModel(@PathVariable String name, @RequestBody Map<String, String> body) {
+        aiService.selectModel(name, body.get("model"));
+        return R.ok();
+    }
+
     /** 管理员：查看分身身份设定（未自定义时返回按导师资料推导的默认值） */
     @GetMapping("/personas/{tutorId}")
     @RequireRole("SYS_ADMIN")

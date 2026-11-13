@@ -39,7 +39,7 @@
     <el-card shadow="never" class="card card-pad">
       <div class="section-title">
         <h3>AI 通道</h3>
-        <span class="muted">额度耗尽自动切换到下一通道，也可手动指定首选</span>
+        <span class="muted">额度耗尽自动切换到下一通道；可调试 Key 连通性、切换 Key 下的模型</span>
       </div>
 
       <div v-if="!providers.length" class="empty">暂无通道配置</div>
@@ -58,17 +58,45 @@
           <div class="provider-main">
             <div class="provider-name">
               {{ item.name }}
-              <span class="ai-tag">{{ item.model || '—' }}</span>
+              <el-select
+                v-if="item.configured"
+                class="model-select"
+                size="small"
+                :model-value="item.model"
+                :loading="modelState[item.name]?.loading"
+                placeholder="选择模型"
+                filterable
+                @visible-change="(open) => open && loadModels(item.name)"
+                @change="(model) => saveModel(item.name, model)"
+              >
+                <el-option v-for="m in modelOptions(item)" :key="m" :label="m" :value="m" />
+              </el-select>
+              <span v-else class="ai-tag">{{ item.model || '—' }}</span>
               <span v-if="item.quotaExceeded" class="ai-tag risk">额度不足</span>
             </div>
             <div class="provider-meta">
               {{ providerMeta(item) }}
               <span v-if="item.cooldownUntil"> · 冷却至 {{ String(item.cooldownUntil).slice(11, 16) }}</span>
             </div>
+            <div v-if="testState[item.name]" class="provider-test" :class="{ ok: testState[item.name].ok }">
+              {{ testState[item.name].ok
+                ? `调试通过：「${testState[item.name].reply || ''}」 ${testState[item.name].latencyMs ?? '—'} ms`
+                : `调试失败：${testState[item.name].error || '未知错误'}` }}
+            </div>
           </div>
-          <el-button size="small" :disabled="item.active || !item.configured" @click="switchProvider(item.name)">
-            {{ item.active ? '当前' : '切换' }}
-          </el-button>
+          <div class="provider-actions">
+            <el-button
+              size="small"
+              :disabled="!item.configured"
+              :loading="testing === item.name"
+              @click="testProvider(item.name)"
+            >
+              调试
+            </el-button>
+            <el-button size="small" :disabled="item.active || !item.configured" @click="switchProvider(item.name)">
+              {{ item.active ? '当前' : '切换' }}
+            </el-button>
+          </div>
         </div>
       </div>
     </el-card>
@@ -179,6 +207,11 @@ const data = ref({})
 const providers = ref([])
 const stats = computed(() => data.value.stats || {})
 
+// AI 通道调试：模型下拉（name -> {loading, loaded, list}）与调试结果（name -> {ok, reply, latencyMs, error}）
+const modelState = reactive({})
+const testState = reactive({})
+const testing = ref('')
+
 const ocr = reactive({ provider: 'auto', available: {}, model: '', saving: false })
 
 const OCR_LABELS = {
@@ -247,6 +280,48 @@ async function switchProvider(name) {
   await loadProviders()
 }
 
+function modelOptions(item) {
+  const list = modelState[item.name]?.list || []
+  // 当前生效模型若不在拉回的列表里（如厂商改名），也保底展示，避免下拉显示空白
+  return item.model && !list.includes(item.model) ? [item.model, ...list] : list
+}
+
+async function loadModels(name) {
+  const state = modelState[name]
+  if (state?.loaded || state?.loading) return
+  modelState[name] = { loading: true, loaded: false, list: state?.list || [] }
+  try {
+    const list = await api.aiProviderModels(name)
+    modelState[name] = { loading: false, loaded: true, list: Array.isArray(list) ? list : [] }
+  } catch (error) {
+    modelState[name] = { loading: false, loaded: false, list: [] }
+    ElMessage.error(`拉取模型列表失败：${error.message}`)
+  }
+}
+
+async function saveModel(name, model) {
+  try {
+    await api.aiSetProviderModel(name, model)
+    ElMessage.success(`${name} 模型已切换为 ${model}（已保存，重启后仍生效）`)
+    await loadProviders()
+  } catch (error) {
+    ElMessage.error(`切换模型失败：${error.message}`)
+    await loadProviders()
+  }
+}
+
+async function testProvider(name) {
+  testing.value = name
+  try {
+    const res = await api.aiProviderTest(name)
+    testState[name] = res || { ok: false, error: '空响应' }
+  } catch (error) {
+    testState[name] = { ok: false, error: error.message }
+  } finally {
+    testing.value = ''
+  }
+}
+
 onMounted(() => {
   load()
   loadProviders()
@@ -255,6 +330,29 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.model-select {
+  width: 172px;
+  flex: none;
+}
+
+.provider-actions {
+  display: flex;
+  flex: none;
+  gap: 0;
+}
+
+.provider-test {
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--label-3);
+  word-break: break-all;
+}
+
+.provider-test.ok {
+  color: var(--ios-green);
+}
+
 .ocr-row {
   margin: 2px 0 12px;
 }

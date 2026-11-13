@@ -73,6 +73,65 @@ public class AiService {
         gateway.switchProvider(name);
     }
 
+    /* ---- 管理端调试：模型列表 / 连通性测试 / 模型切换 ---- */
+
+    /** system_config 中模型覆盖的键前缀，如 ai.model.deepseek */
+    public static final String MODEL_KEY_PREFIX = "ai.model.";
+
+    /** 拉取某通道 API Key 下的可用模型列表 */
+    public List<String> providerModels(String name) {
+        return gateway.listModels(name);
+    }
+
+    /** 调试某通道：一次最小对话，验证 Key 与连通性 */
+    public Map<String, Object> testProvider(String name) {
+        return gateway.testCall(name);
+    }
+
+    /** 切换某通道使用的模型：运行时立即生效，并持久化到 system_config（重启后保留） */
+    public void selectModel(String name, String model) {
+        gateway.setModel(name, model);
+        String key = MODEL_KEY_PREFIX + name.trim().toLowerCase();
+        String value = model.trim();
+        Integer exists = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM system_config WHERE config_key = ?", Integer.class, key);
+        if (exists != null && exists > 0) {
+            jdbc.update("UPDATE system_config SET config_value = ?, description = ? WHERE config_key = ?",
+                    value, "AI 通道模型选择（管理端可切换）", key);
+        } else {
+            jdbc.update("""
+                    INSERT INTO system_config (config_key, config_value, value_type, config_group, description)
+                    VALUES (?, ?, 'STRING', 'ai', 'AI 通道模型选择（管理端可切换）')
+                    """, key, value);
+        }
+        log.info("AI 通道 {} 模型已保存为 {}", name, value);
+    }
+
+    /** 启动时恢复管理端保存过的模型选择（没保存过的通道沿用 .env 配置） */
+    @jakarta.annotation.PostConstruct
+    void restoreModelOverrides() {
+        try {
+            List<Map<String, Object>> rows = jdbc.queryForList(
+                    "SELECT config_key, config_value FROM system_config WHERE config_key LIKE ?",
+                    MODEL_KEY_PREFIX + "%");
+            for (Map<String, Object> row : rows) {
+                String key = String.valueOf(row.get("config_key"));
+                String value = row.get("config_value") == null ? "" : String.valueOf(row.get("config_value"));
+                if (value.isBlank()) {
+                    continue;
+                }
+                String name = key.substring(MODEL_KEY_PREFIX.length());
+                try {
+                    gateway.setModel(name, value);
+                } catch (Exception e) {
+                    log.warn("恢复 AI 通道 {} 模型失败：{}", name, e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("读取 AI 模型覆盖配置失败（忽略，沿用默认）：{}", e.getMessage());
+        }
+    }
+
     /* ---------------- 学生端 ---------------- */
 
     public Map<String, Object> interviewTips() {

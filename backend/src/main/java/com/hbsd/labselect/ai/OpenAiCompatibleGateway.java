@@ -78,6 +78,11 @@ public class OpenAiCompatibleGateway implements AiGateway {
     }
 
     private String endpoint() {
+        return base() + "/chat/completions";
+    }
+
+    /** OpenAI 兼容协议的接口根地址（不带 /chat/completions） */
+    private String base() {
         String base = provider.getBaseUrl();
         if (base == null || base.isBlank()) {
             base = properties.getBaseUrl();
@@ -88,7 +93,107 @@ public class OpenAiCompatibleGateway implements AiGateway {
         if (base.endsWith("/")) {
             base = base.substring(0, base.length() - 1);
         }
-        return base + "/chat/completions";
+        return base;
+    }
+
+    /* ---------------- 管理端调试 ---------------- */
+
+    /** 拉取 Key 下可用模型列表：GET {base}/models，解析 data[].id */
+    public List<String> listModels() {
+        HttpResponse<String> response;
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(base() + "/models"))
+                    .timeout(Duration.ofSeconds(properties.getTimeoutSeconds()))
+                    .header("Accept", "application/json")
+                    .header("Authorization", "Bearer " + provider.getApiKey())
+                    .GET()
+                    .build();
+            response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            throw new BizException(502, "连接模型服务失败：" + e.getMessage());
+        }
+        if (response.statusCode() / 100 != 2) {
+            throw new BizException(502, "模型列表获取失败（HTTP " + response.statusCode() + "）：" + snippet(response.body()));
+        }
+        try {
+            JsonNode root = mapper.readTree(response.body());
+            JsonNode data = root.path("data");
+            List<String> models = new ArrayList<>();
+            if (data.isArray()) {
+                for (JsonNode item : data) {
+                    String id = item.path("id").asText("");
+                    if (id.isBlank()) {
+                        id = item.path("name").asText("");
+                    }
+                    if (!id.isBlank()) {
+                        models.add(id);
+                    }
+                }
+            }
+            if (models.isEmpty()) {
+                throw new BizException(502, "模型列表为空，请确认该 API Key 的权限");
+            }
+            return models;
+        } catch (BizException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BizException(502, "模型列表无法解析：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 调试调用：发一次最小对话验证 Key / 模型 / 连通性。
+     * 成功返回 {ok:true, model, latencyMs, reply}；失败返回 {ok:false, status, error}（不抛异常，便于前端内联展示）。
+     */
+    public Map<String, Object> testCall() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", model());
+        body.put("messages", List.of(Map.of("role", "user", "content", "请只回复两个字：正常")));
+        // 预算给足：推理型模型会先消耗 token 生成思考过程，8 个 token 会出现正文为空的假失败
+        body.put("max_tokens", 256);
+        body.put("temperature", 0);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("provider", provider());
+        result.put("model", model());
+        long start = System.currentTimeMillis();
+        HttpResponse<String> response;
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint()))
+                    .timeout(Duration.ofSeconds(properties.getTimeoutSeconds()))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + provider.getApiKey())
+                    .POST(HttpRequest.BodyPublishers.ofString(writeJson(body), StandardCharsets.UTF_8))
+                    .build();
+            response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            result.put("ok", false);
+            result.put("error", "连接失败：" + e.getMessage());
+            return result;
+        }
+        result.put("latencyMs", System.currentTimeMillis() - start);
+
+        if (response.statusCode() / 100 != 2) {
+            result.put("ok", false);
+            result.put("status", response.statusCode());
+            result.put("error", "HTTP " + response.statusCode() + "：" + snippet(response.body()));
+            return result;
+        }
+        try {
+            JsonNode root = mapper.readTree(response.body());
+            String content = stripFence(extractContent(root.path("choices").path(0).path("message").path("content")));
+            String actualModel = root.path("model").asText(model());
+            result.put("ok", content.isBlank() ? false : true);
+            result.put("model", actualModel);
+            result.put("reply", content);
+            if (content.isBlank()) {
+                result.put("error", "模型返回空内容");
+            }
+        } catch (Exception e) {
+            result.put("ok", false);
+            result.put("error", "响应无法解析：" + e.getMessage());
+        }
+        return result;
     }
 
     /* ---------------- 四类能力 ---------------- */
