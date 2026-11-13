@@ -4,6 +4,9 @@
 
 **技术栈**：Vue 3 + Element Plus + Vite 5 / Spring Boot 3.5 + MyBatis-Plus + MySQL 8 / JWT。
 
+> 分支说明：`main` 与 `bawen` 内容一致，都是最新版。日常开发走 `bawen`，稳定后同步到 `main`，clone 默认分支即可直接使用。
+> 首次部署或换机器，请直接看第 2 节「防呆版」步骤，其中第 4 步（清旧库）是最容易漏掉的一步。
+
 ---
 
 ## 1. 三端结构（四类账号，三个登录入口）
@@ -21,24 +24,122 @@
 - 「实训室负责人」由管理员在 **导师与实训室 → 编辑导师 → 授予实训室负责人身份** 中切换：授予后 `users.role` 变为 `LAB_ADMIN`、`labs.leader_id` 指向本人，导师端多出「实训室事务」；撤销后回退为 `TUTOR`。每个实训室仅一位负责人，改派需先取消原负责人。
 - 一个账号若同时是导师（有 `tutors` 记录）又是实训室管理员（`role=LAB_ADMIN`），登录后两套能力都开放，菜单同时出现「导师事务」与「实训室事务」。
 
-## 2. 快速启动
+## 2. 从远程仓库拉下来怎么跑起来（防呆版）
 
-前置：JDK 17+、Maven 3.6+、Node 18+、MySQL 8（服务已启动）。
+> 照着顺序做完就能用。每一步都给了「命令 → 预期结果」，不符合预期就停在那一步排查，别往下走。
+
+### 第 1 步：确认本机环境
 
 ```bash
-# 1) 配置（复制后填入你的 MySQL 密码）
-cp .env.example .env
+java -version     # 预期 17 或 21
+mvn -v            # 预期 3.6+
+node -v           # 预期 18+
+mysql --version   # 预期 8.x（或本机已装 MySQL 服务并在运行）
+```
 
-# 2) 一键启动前后端（Git Bash / WSL / macOS / Linux）
+四项缺一不可。`java` 版本低于 17 或高于 21 时，Lombok 注解可能不生效，编译会报「找不到 getter/setter」。
+
+### 第 2 步：克隆代码
+
+```bash
+git clone https://github.com/fang937/system.git
+cd system
+git branch --show-current     # 预期：main
+```
+
+`main` 与 `bawen` 已同步为同一份最新代码，直接 clone 默认分支即可，不需要再切分支。
+
+> 如果你的仓库副本是更早时候拉的，先 `git pull` 到最新，否则代码是旧版（学生名单会是「刘一诺」那一批）。
+
+### 第 3 步：配置 `.env`
+
+```bash
+cp .env.example .env
+```
+
+打开 `.env`，**必须改这一项**：
+
+```ini
+MYSQL_ROOT_PASSWORD=你的MySQL密码
+```
+
+其余保持默认即可。OCR / AI 的 Key 不填也能跑通全部功能（走内置规则引擎，界面会标「规则引擎预览」），需要真实模型时再补。
+
+验证：
+
+```bash
+grep MYSQL_ROOT_PASSWORD .env    # 预期：等号后面不是空的
+```
+
+### 第 4 步：清掉旧库 ⚠️ 最容易踩的坑
+
+**只要这台机器以前跑过这个项目（或跑过旧版本），就必须先清库。**
+
+原因：演示数据初始化器 `DemoDataInitializer.seedStudents()` 的判断是「`users` 表里已有学生就直接跳过」，`schema.sql` 用的也是 `CREATE TABLE IF NOT EXISTS`。所以不清库的话，代码换成最新的，登录看到的还是旧数据。
+
+```bash
+# 本地 MySQL（库名取自 .env 的 MYSQL_DATABASE，默认 lab_select_v2）
+mysql -uroot -p -e "DROP DATABASE IF EXISTS lab_select_v2;"
+
+# 用 Docker 部署的
+docker compose down -v
+```
+
+**全新机器、从没跑过本项目 → 可以跳过这一步。**
+
+### 第 5 步：启动
+
+```bash
+# Git Bash / WSL / macOS / Linux
 ./scripts/dev.sh
 
 # Windows PowerShell
 powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
 ```
 
-启动后：前端 <http://localhost:8089>，后端 <http://localhost:8080>，健康检查 `/api/health`。
+脚本会自动把 `.env` 里的 `MYSQL_*` 映射成后端需要的 `DB_*` 变量，并同时拉起前后端。也可以按下面「手动启动」分两个终端跑。
 
-首次启动会自动建表（`schema.sql`）并写入演示数据；数据库不存在时会自动创建（`createDatabaseIfNotExist=true`，默认库名 `lab_select_v2`）。
+首次启动会自动完成：建库（`createDatabaseIfNotExist=true`）→ 建表（`schema.sql`）→ 写入演示数据（8 名学生、6 个实训室、25 位导师、8 个阶段、演示志愿）。
+
+### 第 6 步：验证是否真的跑起来了
+
+四项全部通过才算成功：
+
+| 检查 | 命令 / 操作 | 预期结果 |
+|---|---|---|
+| ① 后端活着 | `curl http://localhost:8080/api/health` | `{"code":0,"message":"ok",...}` |
+| ② 前端能开 | 浏览器打开 <http://localhost:8089> | 出现登录页，无白屏、无 404 |
+| ③ 数据是新的 | `mysql -uroot -p -e "SELECT COUNT(*) FROM lab_select_v2.users WHERE role='STUDENT';"` | `8`（不是 12） |
+| ④ 账号对得上 | 学生端登录 `2023001` / `123456` | 姓名显示 **林晓**，专业 **软件工程** |
+
+第 ③ 项如果是 `12`，说明旧库没清干净，回到第 4 步。
+
+更细的核对（可选）：
+
+```sql
+SELECT COUNT(*) FROM labs;    -- 预期 6
+SELECT COUNT(*) FROM tutors;  -- 预期 25
+SELECT COUNT(*) FROM selection_phases;  -- 预期 14（8 个阶段 + 3 轮展开）
+```
+
+### 第 7 步：登录三个端
+
+见下一节「3. 演示账号」，密码统一 `123456`。
+
+### 出问题了对照这张表
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| 登录 `2023001` 是「刘一诺」 | 旧库没清 | 回第 4 步清库后重启 |
+| 导师只有 6 位、实训室 3 个 | 同上，旧版数据 | 同上 |
+| 登录提示账号或密码错误 | 演示数据没写入 | 确认 `DEMO_DATA=true`，并确认 `users` 表为空后重启 |
+| 页面空白 / 接口 404 | 后端没起来 | 先确认 `/api/health` 能否打开 |
+| `Port 8080 was already in use` | 端口被占 | 关掉占用进程，或 `--server.port=8081` |
+| `Access denied for user 'root'` | `.env` 密码不对 | 改 `MYSQL_ROOT_PASSWORD` |
+| `Communications link failure` | MySQL 没启动 | 启动 `MySQL80` 服务 |
+| 按钮全灰、提示「当前不在 xx 阶段」 | 阶段窗口不覆盖当前时间 | 管理端「阶段与轮次」→「立即进入」 |
+
+更完整的排错见 `docs/启动指南.md`（含 5.1 换设备/切分支后数据仍旧的专项说明）。
 
 ### 手动启动
 
