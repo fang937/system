@@ -6,6 +6,7 @@ import com.hbsd.labselect.common.R;
 import com.hbsd.labselect.common.RequireRole;
 import com.hbsd.labselect.common.UserContext;
 import com.hbsd.labselect.dto.ApplyReq;
+import com.hbsd.labselect.service.ResumeDraftService;
 import com.hbsd.labselect.service.ResumeService;
 import com.hbsd.labselect.service.StudentService;
 import jakarta.validation.Valid;
@@ -34,6 +35,7 @@ public class StudentController {
 
     private final StudentService studentService;
     private final ResumeService resumeService;
+    private final ResumeDraftService resumeDraftService;
 
     @GetMapping("/profile")
     public R<Map<String, Object>> profile() {
@@ -50,6 +52,24 @@ public class StudentController {
     @PostMapping("/resume")
     public R<Map<String, Object>> uploadResume(@RequestParam("file") MultipartFile file) {
         return R.ok(resumeService.upload(UserContext.get().id(), file));
+    }
+
+    /* ---------- 结构化简历草稿（AI 优化简历的编辑底稿） ---------- */
+
+    @GetMapping("/resume/draft")
+    public R<Map<String, Object>> resumeDraft() {
+        return R.ok(resumeDraftService.load(UserContext.get().id()));
+    }
+
+    @PutMapping("/resume/draft")
+    public R<Map<String, Object>> saveResumeDraft(@RequestBody Map<String, Object> body) {
+        return R.ok(resumeDraftService.save(UserContext.get().id(), body));
+    }
+
+    /** 从已上传的 PDF / DOCX 简历正文按栏目导入，导入结果仍需学生确认后保存 */
+    @PostMapping("/resume/draft/import")
+    public R<Map<String, Object>> importResumeDraft() {
+        return R.ok(resumeDraftService.importFromResume(UserContext.get().id()));
     }
 
     @DeleteMapping("/resume")

@@ -1,7 +1,23 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
-const http = axios.create({ baseURL: '/api', timeout: 20000 })
+/**
+ * 超时预算分层：
+ * - 普通接口 30s，够用且能快速暴露后端异常；
+ * - AI 对话 90s：首次调用含 DNS/TLS 握手与模型冷启动，30s 不够；
+ * - 简历初评 360s：首次评一份扫描件简历时，后端要先同步跑完 OCR
+ *   （MinerU 轮询上限 120s，失败再降级 PP-StructureV3 上限 180s），再进模型。
+ *   此前全局 20s，等于「第一次点必然超时」。上传时已后台预解析正文，
+ *   正常情况下点评直接命中缓存，几秒返回；这里的 360s 只是兜底。
+ * - 文件上传 120s：10MB 简历在弱网下也会超过 30s。
+ */
+const DEFAULT_TIMEOUT = 30000
+const AI_TIMEOUT = 90000
+const AI_REVIEW_TIMEOUT = 360000
+const AI_OPTIMIZE_TIMEOUT = 180000
+const UPLOAD_TIMEOUT = 120000
+
+const http = axios.create({ baseURL: '/api', timeout: DEFAULT_TIMEOUT })
 
 http.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
@@ -17,6 +33,13 @@ function toLogin() {
   if (!location.pathname.endsWith('/login')) {
     location.href = '/login'
   }
+}
+
+/** axios 的超时在浏览器里表现为 ECONNABORTED / "timeout of Nms exceeded" */
+function isTimeoutError(error) {
+  if (!error) return false
+  if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') return true
+  return /timeout of \d+ms exceeded/i.test(error.message || '')
 }
 
 http.interceptors.response.use(
@@ -53,7 +76,12 @@ http.interceptors.response.use(
         payload = null
       }
     }
-    const message = payload?.message || error.message || '网络异常'
+    const timedOut = isTimeoutError(error)
+    const message = payload?.message
+      || (timedOut
+        // 不暴露 "timeout of 20000ms" 这类实现细节，改为可执行的中文提示
+        ? '等待超时：服务端可能仍在处理，稍后重试通常即可'
+        : error.message || '网络异常')
     if (status === 401) {
       toLogin()
     }
@@ -63,6 +91,7 @@ http.interceptors.response.use(
     const wrapped = new Error(message)
     wrapped.code = payload?.code || status
     wrapped.data = payload?.data
+    wrapped.timeout = timedOut
     return Promise.reject(wrapped)
   }
 )
@@ -106,6 +135,7 @@ export const api = {
   // 管理端
   adminOverview: () => http.get('/admin/overview'),
   phases: () => http.get('/admin/phases'),
+  resetPhases: () => http.post('/admin/phases/reset'),
   updatePhase: (id, payload) => http.put(`/admin/phases/${id}`, payload),
   jumpPhase: (id) => http.post(`/admin/phases/${id}/jump`),
   closePhase: (id) => http.post(`/admin/phases/${id}/close`),
@@ -137,6 +167,7 @@ export const api = {
     form.append('file', file)
     return http.post('/student/resume', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: UPLOAD_TIMEOUT,
       onUploadProgress: (event) => onProgress && onProgress(event),
       skipErrorToast: true
     })
@@ -146,21 +177,46 @@ export const api = {
   applicantResumeBlob: (applicationId) =>
     http.get(`/workbench/applicants/${applicationId}/resume`, { responseType: 'blob', skipErrorToast: true }),
 
-  // AI 能力（当前默认规则引擎占位，填 AI_API_KEY 后即为真实模型）
+  // 结构化简历草稿（AI 优化简历的编辑底稿）
+  resumeDraft: () => http.get('/student/resume/draft'),
+  saveResumeDraft: (payload) => http.put('/student/resume/draft', payload, { skipErrorToast: true }),
+  importResumeDraft: () =>
+    http.post('/student/resume/draft/import', null, { skipErrorToast: true, timeout: AI_REVIEW_TIMEOUT }),
+
+  // AI 能力（默认走管理端配置的通道，一把 Key 都没有时为内置规则引擎）
   // AI 调用统一 skipErrorToast：失败由页面内的红色提示框承接，避免重复打扰
+  // 超时单独放宽：AI 属于长任务，不能用普通接口的 30s
   aiRubric: () => http.get('/ai/rubric'),
-  aiInterviewTips: () => http.post('/ai/interview-tips', null, { skipErrorToast: true }),
-  aiRecommendations: () => http.get('/ai/recommendations', { skipErrorToast: true }),
+  aiInterviewTips: () => http.post('/ai/interview-tips', null, { skipErrorToast: true, timeout: AI_TIMEOUT }),
+  aiRecommendations: () => http.get('/ai/recommendations', { skipErrorToast: true, timeout: AI_TIMEOUT }),
   aiAvatars: () => http.get('/ai/avatars'),
-  aiAvatarChat: (tutorId, payload) => http.post(`/ai/avatars/${tutorId}/chat`, payload, { skipErrorToast: true }),
-  aiResumeReview: (applicationId) => http.post('/ai/resume-review', { applicationId }, { skipErrorToast: true }),
+  aiAvatarChat: (tutorId, payload) =>
+    http.post(`/ai/avatars/${tutorId}/chat`, payload, { skipErrorToast: true, timeout: AI_TIMEOUT }),
+  aiResumeReview: (applicationId) =>
+    http.post('/ai/resume-review', { applicationId }, { skipErrorToast: true, timeout: AI_REVIEW_TIMEOUT }),
+  aiResumeOptimize: (payload) =>
+    http.post('/ai/resume-optimize', payload, { skipErrorToast: true, timeout: AI_OPTIMIZE_TIMEOUT }),
+  aiCoachQuestion: (payload) =>
+    http.post('/ai/interview-coach/question', payload, { skipErrorToast: true, timeout: AI_TIMEOUT }),
+  aiCoachFeedback: (payload) =>
+    http.post('/ai/interview-coach/feedback', payload, { skipErrorToast: true, timeout: AI_TIMEOUT }),
+  aiCoachHistory: () => http.get('/ai/interview-coach/history'),
   aiProviders: () => http.get('/ai/providers'),
   aiActivateProvider: (name) => http.post(`/ai/providers/${name}/activate`),
-  aiProviderModels: (name) => http.get(`/ai/providers/${name}/models`, { skipErrorToast: true }),
-  aiProviderTest: (name) => http.post(`/ai/providers/${name}/test`, null, { skipErrorToast: true }),
+  aiProviderModels: (name) => http.get(`/ai/providers/${name}/models`, { skipErrorToast: true, timeout: AI_TIMEOUT }),
+  aiProviderTest: (name) =>
+    http.post(`/ai/providers/${name}/test`, null, { skipErrorToast: true, timeout: AI_TIMEOUT }),
+
+  // 导师端：自己的 AI 分身（状态 / 设定 / 试聊）
+  myAvatar: () => http.get('/ai/my-avatar'),
+  saveMyAvatar: (payload) => http.put('/ai/my-avatar', payload),
+  myAvatarChat: (question) =>
+    http.post('/ai/my-avatar/chat', { question }, { skipErrorToast: true, timeout: AI_TIMEOUT }),
   aiSetProviderModel: (name, model) => http.put(`/ai/providers/${name}/model`, { model }),
+  aiSetProviderKey: (name, apiKey) => http.put(`/ai/providers/${name}/key`, { apiKey }),
   ocrConfig: () => http.get('/admin/ocr-config'),
   updateOcrConfig: (provider) => http.put('/admin/ocr-config', { provider }),
+  updateOcrSecret: (target, value) => http.put('/admin/ocr-secrets', { target, value }),
 
   // 师生直连私信（学生 ↔ 导师/负责人）
   messageThreads: () => http.get('/messages/threads'),

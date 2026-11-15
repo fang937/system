@@ -22,6 +22,12 @@ public class OcrProviderResolver {
 
     public static final String CONFIG_KEY = "ocr.provider";
 
+    /** 管理端可写入的 OCR 密钥/接入点：system_config 键前缀 ocr.secret.<target>（页面写入优先于 .env） */
+    public static final String SECRET_KEY_PREFIX = "ocr.secret.";
+
+    /** 可写入的密钥目标 */
+    public static final List<String> SECRET_TARGETS = List.of("mineru-token", "structure-endpoint", "structure-api-key");
+
     /** 可选引擎，顺序即自动模式下的尝试顺序 */
     public static final List<String> OPTIONS = List.of("auto", "mineru", "pp-structure-v3", "ocr", "none");
 
@@ -75,6 +81,85 @@ public class OcrProviderResolver {
         log.info("简历解析引擎切换为 {}", value);
     }
 
+    /* ---------------- 密钥/接入点写入（管理端） ---------------- */
+
+    /**
+     * 写入 OCR 密钥或接入点：立即生效并持久化到 system_config（优先于 .env）。
+     * value 传空串表示清空（回退到 .env 的初始值由下次重启时的绑定顺序决定，运行时即清）。
+     */
+    public void updateSecret(String target, String value) {
+        String key = normalizeTarget(target);
+        String val = value == null ? "" : value.trim();
+        applySecret(key, val);
+        Integer exists = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM system_config WHERE config_key = ?", Integer.class, SECRET_KEY_PREFIX + key);
+        if (exists != null && exists > 0) {
+            if (val.isEmpty()) {
+                jdbc.update("DELETE FROM system_config WHERE config_key = ?", SECRET_KEY_PREFIX + key);
+            } else {
+                jdbc.update("UPDATE system_config SET config_value = ?, description = ? WHERE config_key = ?",
+                        val, "OCR 密钥/接入点（管理端写入，优先于 .env）", SECRET_KEY_PREFIX + key);
+            }
+        } else if (!val.isEmpty()) {
+            jdbc.update("""
+                    INSERT INTO system_config (config_key, config_value, value_type, config_group, description)
+                    VALUES (?, ?, 'STRING', 'ocr', 'OCR 密钥/接入点（管理端写入，优先于 .env）')
+                    """, SECRET_KEY_PREFIX + key, val);
+        }
+        log.info("OCR 配置 {} 已更新（{}）", key, mask(val));
+    }
+
+    /** 启动时恢复管理端写入过的密钥/接入点 */
+    @jakarta.annotation.PostConstruct
+    void restoreSecrets() {
+        try {
+            List<Map<String, Object>> rows = jdbc.queryForList(
+                    "SELECT config_key, config_value FROM system_config WHERE config_key LIKE ?",
+                    SECRET_KEY_PREFIX + "%");
+            for (Map<String, Object> row : rows) {
+                String configKey = String.valueOf(row.get("config_key"));
+                String value = row.get("config_value") == null ? "" : String.valueOf(row.get("config_value"));
+                if (value.isBlank()) {
+                    continue;
+                }
+                try {
+                    applySecret(configKey.substring(SECRET_KEY_PREFIX.length()), value);
+                } catch (Exception e) {
+                    log.warn("恢复 OCR 配置 {} 失败：{}", configKey, e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("读取 OCR 密钥覆盖配置失败（忽略，沿用 .env）：{}", e.getMessage());
+        }
+    }
+
+    private String normalizeTarget(String target) {
+        String key = target == null ? "" : target.trim().toLowerCase();
+        if (!SECRET_TARGETS.contains(key)) {
+            throw new com.hbsd.labselect.common.BizException("不支持的配置项：" + target);
+        }
+        return key;
+    }
+
+    private void applySecret(String target, String value) {
+        switch (target) {
+            case "mineru-token" -> properties.setMineruToken(value);
+            case "structure-endpoint" -> properties.setStructureEndpoint(value);
+            case "structure-api-key" -> properties.setStructureApiKey(value);
+            default -> throw new com.hbsd.labselect.common.BizException("不支持的配置项：" + target);
+        }
+    }
+
+    private String mask(String value) {
+        if (value == null || value.isBlank()) {
+            return "(空)";
+        }
+        if (value.length() <= 8) {
+            return "****";
+        }
+        return value.substring(0, 4) + "****" + value.substring(value.length() - 4);
+    }
+
     /** 管理端展示：当前选择 + 各引擎是否具备调用条件。 */
     public Map<String, Object> snapshot() {
         Map<String, Object> result = new LinkedHashMap<>();
@@ -91,6 +176,11 @@ public class OcrProviderResolver {
 
         result.put("model", properties.getMineruModel());
         result.put("mineruEndpoint", properties.getMineruEndpoint());
+        // 密钥/接入点现状（掩码），供管理端「API Key 配置」展示
+        result.put("secrets", Map.of(
+                "mineru-token", mask(properties.getMineruToken()),
+                "structure-endpoint", properties.getStructureEndpoint() == null ? "" : properties.getStructureEndpoint(),
+                "structure-api-key", mask(properties.getStructureApiKey())));
         return result;
     }
 

@@ -73,6 +73,36 @@ public class PhaseService {
         }
     }
 
+    /**
+     * 把时间轴整体重置到初始阶段（宣讲）。
+     *
+     * <p>做法：保留每个阶段原有“时长”，从当前时间起按顺序重新排：
+     * 第一个阶段立即生效，后续阶段在前一阶段结束后间隔 1 小时依次排开。
+     * 这样不会出现旧窗口仍覆盖当前时间、导致多个阶段同时“进行中”的情况。
+     * 调用方（{@code AdminService.resetAll}）负责在同一事务里清理志愿与面试数据。</p>
+     */
+    public void resetTimeline() {
+        List<SelectionPhase> phases = list();
+        LocalDateTime now = LocalDateTime.now().withNano(0).minusMinutes(1);
+        LocalDateTime cursor = now;
+        boolean first = true;
+        for (SelectionPhase phase : phases) {
+            Duration duration = Duration.between(phase.getStartAt(), phase.getEndAt());
+            if (duration.isNegative() || duration.isZero() || duration.compareTo(Duration.ofHours(1)) < 0) {
+                duration = Duration.ofDays(1);
+            }
+            LocalDateTime start = first ? now : cursor.plusHours(1);
+            LocalDateTime end = start.plus(duration);
+            phase.setStartAt(start);
+            phase.setEndAt(end);
+            phase.setStatus(first ? "ACTIVE" : "PENDING");
+            phaseMapper.updateById(phase);
+            cursor = end;
+            first = false;
+        }
+        setCurrentRound(1);
+    }
+
     public List<SelectionPhase> list() {
         return phaseMapper.selectList(new QueryWrapper<SelectionPhase>()
                 .orderByAsc("seq")

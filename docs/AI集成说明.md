@@ -234,6 +234,158 @@ POST /api/ai/providers/{name}/activate （角色：SYS_ADMIN，切换首选并�
 
 `available=false` 表示该通道正在冷却或未配置 Key；`quotaExceeded=true` 会显示红色「额度不足」标签。
 
+### 9. 学生端 · AI 优化简历
+
+结构化草稿是优化底稿：学生可手动填写，也可从已上传 PDF / DOCX 简历正文按栏目导入。草稿与原始文件分离，
+AI 只改写草稿文本，不会覆盖上传的简历文件。
+
+```
+GET  /api/student/resume/draft          （角色：STUDENT）读取草稿
+PUT  /api/student/resume/draft          （角色：STUDENT）保存草稿
+POST /api/student/resume/draft/import   （角色：STUDENT）从已上传简历正文导入
+POST /api/ai/resume-optimize            （角色：STUDENT）逐栏优化
+```
+
+草稿结构：
+
+```json
+{
+  "sections": [
+    {"key": "basic", "title": "个人信息", "content": "姓名：林晓\n求职意向：后端开发"},
+    {"key": "education", "title": "教育背景", "content": "……"},
+    {"key": "projects", "title": "项目经历", "content": "……"},
+    {"key": "internships", "title": "实习经历", "content": "……"},
+    {"key": "skills", "title": "技能描述", "content": "……"},
+    {"key": "awards", "title": "奖项证书", "content": "……"},
+    {"key": "selfIntro", "title": "自我评价", "content": "……"},
+    {"key": "other", "title": "其他信息", "content": "……"}
+  ],
+  "targetRole": "后端开发实习生",
+  "keywords": ["Java", "Spring Boot", "MySQL"],
+  "focus": ["concise", "quantify", "keywords", "professional"],
+  "source": "manual | resume-text",
+  "updatedAt": "2026-11-14T10:00:00",
+  "limits": {"maxSectionChars": 2000, "maxTotalChars": 8000, "minChars": 30}
+}
+```
+
+优化请求只传栏目与目标，不重复传正文（正文以已保存草稿为准）：
+
+```json
+{
+  "sections": ["basic", "education", "projects", "internships", "skills"],
+  "focus": ["concise", "quantify", "keywords", "professional"],
+  "targetRole": "后端开发实习生",
+  "keywords": ["Java", "Spring Boot", "MySQL", "Redis"]
+}
+```
+
+`focus` 四类侧重点：
+
+| key | 含义 |
+|---|---|
+| `concise` | 措辞精炼，去掉口语化与重复表达 |
+| `quantify` | 突出成果量化，补充规模、比例、耗时等数据 |
+| `keywords` | 匹配目标岗位关键词，自然融入而非堆砌 |
+| `professional` | 提升专业性与可读性，动词开头、要点式表达 |
+
+响应 `data`：
+
+```json
+{
+  "summary": {"scoreBefore": 62, "scoreAfter": 78, "sectionCount": 5, "headline": "…", "advice": "…"},
+  "suggestions": [{
+    "section": "projects", "sectionTitle": "项目经历",
+    "before": "原文", "after": "建议",
+    "reasons": ["措辞更精炼"], "issues": ["缺少可量化结果"],
+    "focus": ["concise", "quantify"], "changed": true,
+    "scoreBefore": 60, "scoreAfter": 80
+  }],
+  "keywordMatches": {"matched": ["Java"], "missing": ["Redis"]},
+  "targetRole": "后端开发实习生",
+  "focus": ["concise", "quantify", "keywords", "professional"],
+  "disclaimer": "AI 只调整措辞与结构，不会新增你的经历…"
+}
+```
+
+约束：
+
+- 每个栏目最多返回 1 条建议，`before` 必须是草稿原文（可截取片段），`after` 只能调整措辞与结构；
+- 不新增学生未提供的项目、公司、数字、奖项；缺少量化数据时用「（补充：…）」占位；
+- 单栏 ≤ 2000 字、总计 ≤ 8000 字、至少 30 字才允许优化；超限返回 `code=400`，前端在按钮下方给出可执行提示；
+- 前端展示「原文 / 建议」双栏对照，可单条应用、一键应用或应用后继续编辑；保存仍走 `PUT /api/student/resume/draft`。
+
+### 10. 学生端 · AI 面试辅导
+
+```
+POST /api/ai/interview-coach/question   （角色：STUDENT）出题
+POST /api/ai/interview-coach/feedback   （角色：STUDENT）提交作答并获取反馈
+GET  /api/ai/interview-coach/history    （角色：STUDENT）最近 10 次练习记录
+```
+
+三个环节：
+
+| section | 环节 | 出题依据 |
+|---|---|---|
+| `self-intro` | 自我介绍 | 学生档案 + 目标实训室 |
+| `common` | 常见问题演练 | 行为面题库，按学生与换题序号轮换 |
+| `role` | 岗位相关问题模拟 | 目标导师研究方向 / 学生填写的目标岗位 |
+
+出题请求：
+
+```json
+{"section": "role", "tutorId": 3, "role": "后端开发实习生", "variant": 1}
+```
+
+出题响应 `data`：
+
+```json
+{
+  "section": "role", "sectionTitle": "岗位相关问题模拟",
+  "question": "你了解后端开发方向吗？结合你做过的一个项目，说说你为什么适合这个方向。",
+  "intent": "验证对目标方向的了解程度、项目相关性与解决问题的思路",
+  "tips": ["先说自己理解的方向，再落到做过的项目"],
+  "timeLimitSeconds": 120,
+  "targetLabel": "人工智能实训室 · 计算机视觉"
+}
+```
+
+作答请求：
+
+```json
+{
+  "section": "role", "tutorId": 3, "role": "后端开发实习生",
+  "question": "……", "questionIntent": "……",
+  "answer": "我做过一个校园二手交易平台……"
+}
+```
+
+反馈响应 `data`：
+
+```json
+{
+  "score": 78, "level": "良好",
+  "dimensions": [
+    {"code": "STRUCTURE", "name": "结构与逻辑", "score": 80, "comment": "有清晰的结构词"},
+    {"code": "CONTENT", "name": "内容充实度", "score": 76, "comment": "有数据支撑"},
+    {"code": "EXPRESSION", "name": "表达清晰度", "score": 82, "comment": "句式完整"},
+    {"code": "MATCH", "name": "岗位匹配度", "score": 74, "comment": "回应了方向关键词"}
+  ],
+  "strengths": ["用数据或结果支撑，可信度更高"],
+  "improvements": ["结果缺少量化：补充规模、比例、耗时"],
+  "sampleAnswer": "各位老师好，我是……（请替换为你的真实经历）",
+  "followUp": "如果进入本实训室，你前三个月打算怎么补齐短板？",
+  "disclaimer": "反馈只针对这一次表达，不代表导师评价，也不预测录取结果。"
+}
+```
+
+约束：
+
+- 回答 10~2000 字；空回答或超长返回 `code=400`，前端保留已输入内容并给出提示；
+- 反馈只依据本次回答，`sampleAnswer` 只能是结构模板与「……」占位，不得编造具体经历；
+- 每次反馈落一条 `interview_coach_records`，仅本人可查，不进入导师评分；
+- 追问由反馈里的 `followUp` 直接作为下一题，不额外调用出题接口。
+
 ---
 
 ## 三、评分标准（面试）
@@ -269,8 +421,11 @@ POST /api/ai/providers/{name}/activate （角色：SYS_ADMIN，切换首选并�
 | `interview_scores` | 多维评分明细（与 `interview_results.score` 汇总分并存） |
 | `ai_reviews` | 每次 AI 调用的入参摘要与输出，留痕可追溯 |
 | `resume_texts` | 简历正文抽取缓存（文本层 / PaddleOCR 结果，重新上传即失效） |
+| `resume_drafts` | 结构化简历草稿（栏目正文、目标岗位、关键词、侧重点），AI 优化简历的编辑底稿 |
+| `interview_coach_records` | AI 面试辅导练习记录（题目、回答、得分、反馈 JSON），仅本人可见 |
 
-`ai_reviews` 建议定期归档：`kind` 区分四类能力，`application_id` 可回溯某次面试评估。
+`ai_reviews` 建议定期归档：`kind` 区分能力（`INTERVIEW_TIPS` / `RECOMMEND` / `RESUME_REVIEW` /
+`AVATAR_CHAT` / `RESUME_OPTIMIZE` / `INTERVIEW_COACH_Q` / `INTERVIEW_COACH_FB`），`application_id` 可回溯某次面试评估。
 
 ---
 
@@ -406,9 +561,27 @@ failed → 取 data.errorMsg 抛 502，由上层降级到文本层
 ## 七、注意事项
 
 1. **Key 不要进仓库**：`.env` 已在 `.gitignore` 中，生产用环境变量注入。
-2. **超时**：默认 30 秒，超时会返回 502 并在前端提示；建议给网关设置总并发与限流。
+2. **超时**：后端单次调用默认 30 秒（`AI_TIMEOUT_SECONDS`），超时返回 502；
+   前端按接口分级设超时，**不要**再统一用一个小值：
+
+   | 接口 | 前端超时 | 说明 |
+   |---|---|---|
+   | 普通业务接口 | 30s | 快速暴露后端异常 |
+   | `POST /api/ai/avatars/{id}/chat`、`/api/ai/my-avatar/chat` | 90s | 含 DNS/TLS 握手与模型冷启动 |
+   | `POST /api/ai/interview-coach/question`、`/feedback` | 90s | 单次出题 / 单次反馈，属于短任务 |
+   | `POST /api/ai/resume-optimize` | 180s | 最多 8000 字、多栏目一次改写，输出更长 |
+   | `POST /api/ai/resume-review` | 360s | 首次评分要同步跑 OCR（MinerU 120s + PP-StructureV3 180s 兜底） |
+   | `POST /api/student/resume/draft/import` | 360s | 首次导入要等 OCR 解析正文 |
+
+   历史问题：前端曾全局 20s，而简历初评首次必然超过 20s，表现为「第一次点 AI 一定超时」。
+   现在上传简历后会在事务提交后**后台预解析正文**并写入 `resume_texts`，导师点评时直接命中缓存；
+   后端启动完成后也会异步预热一次模型通道（`ApplicationReadyEvent` → `AiGateway.warmUp()`），
+   把 TCP/TLS 握手成本挪出首次请求。
 3. **成本**：简历初评与面试分析按次调用，一次面试约 5 名候选 → 单轮约 5 次调用，量可控。
 4. **合规**：AI 结果只作参考，`disclaimer` 会随结果展示；分身回答受 `boundaries` 约束，
    不承诺录取、不评价他人、不泄露题目。
 5. **降级**：单个通道额度耗尽会自动切换；全部不可用时接口返回 `code=429` 并在页面显示红框，
    不会返回假数据。如需完全离线，可把 `AI_ENABLED=false` 切回规则引擎，接口结构不变。
+6. **分身身份由导师自己维护**：`ai_personas` 为空时，分身身份按导师资料实时推导（`source=derived`）；
+   导师可在「导师事务 → 我的 AI 分身」查看接入状态（通道 / 模型 / 是否走规则引擎）、
+   改语气与知识范围、并直接试聊。管理员仍可用 `GET/PUT /api/ai/personas/{tutorId}` 代改。

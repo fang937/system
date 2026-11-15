@@ -4,13 +4,23 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hbsd.labselect.common.BizException;
 import com.hbsd.labselect.common.UserContext;
+import com.hbsd.labselect.dto.InterviewCoachFeedbackReq;
+import com.hbsd.labselect.dto.InterviewCoachQuestionReq;
+import com.hbsd.labselect.dto.ResumeOptimizeReq;
 import com.hbsd.labselect.ocr.ResumeTextService;
 import com.hbsd.labselect.service.PhaseService;
+import com.hbsd.labselect.service.ResumeDraftService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
 
+import java.sql.PreparedStatement;
+import java.sql.Statement;
+import java.sql.Types;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -33,6 +43,7 @@ public class AiService {
     private final ResumeTextService resumeTextService;
     private final ResumeTagService resumeTagService;
     private final ResumeProfileService resumeProfileService;
+    private final ResumeDraftService resumeDraftService;
 
     /* ---------------- 评分标准 ---------------- */
 
@@ -78,6 +89,9 @@ public class AiService {
     /** system_config 中模型覆盖的键前缀，如 ai.model.deepseek */
     public static final String MODEL_KEY_PREFIX = "ai.model.";
 
+    /** system_config 中 API Key 的键前缀，如 ai.key.deepseek（页面写入优先于 .env） */
+    public static final String API_KEY_PREFIX = "ai.key.";
+
     /** 拉取某通道 API Key 下的可用模型列表 */
     public List<String> providerModels(String name) {
         return gateway.listModels(name);
@@ -91,45 +105,85 @@ public class AiService {
     /** 切换某通道使用的模型：运行时立即生效，并持久化到 system_config（重启后保留） */
     public void selectModel(String name, String model) {
         gateway.setModel(name, model);
-        String key = MODEL_KEY_PREFIX + name.trim().toLowerCase();
-        String value = model.trim();
-        Integer exists = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM system_config WHERE config_key = ?", Integer.class, key);
-        if (exists != null && exists > 0) {
-            jdbc.update("UPDATE system_config SET config_value = ?, description = ? WHERE config_key = ?",
-                    value, "AI 通道模型选择（管理端可切换）", key);
-        } else {
-            jdbc.update("""
-                    INSERT INTO system_config (config_key, config_value, value_type, config_group, description)
-                    VALUES (?, ?, 'STRING', 'ai', 'AI 通道模型选择（管理端可切换）')
-                    """, key, value);
-        }
-        log.info("AI 通道 {} 模型已保存为 {}", name, value);
+        saveConfig(MODEL_KEY_PREFIX + normalizeName(name), model.trim(), "AI 通道模型选择（管理端可切换）");
+        log.info("AI 通道 {} 模型已保存为 {}", name, model.trim());
     }
 
-    /** 启动时恢复管理端保存过的模型选择（没保存过的通道沿用 .env 配置） */
+    /** 写入某通道的 API Key：运行时立即生效，并持久化到 system_config（优先于 .env） */
+    public void selectApiKey(String name, String apiKey) {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new BizException("API Key 不能为空");
+        }
+        gateway.setApiKey(name, apiKey.trim());
+        saveConfig(API_KEY_PREFIX + normalizeName(name), apiKey.trim(), "AI 通道 API Key（管理端写入，优先于 .env）");
+        log.info("AI 通道 {} 的 API Key 已保存", name);
+    }
+
+    /** 启动时恢复管理端保存过的模型选择与 API Key（没保存过的通道沿用 .env 配置） */
     @jakarta.annotation.PostConstruct
-    void restoreModelOverrides() {
+    void restoreOverrides() {
+        restoreConfig(MODEL_KEY_PREFIX, (name, value) -> gateway.setModel(name, value), "模型");
+        restoreConfig(API_KEY_PREFIX, (name, value) -> gateway.setApiKey(name, value), "API Key");
+    }
+
+    /**
+     * 启动完成后异步预热模型通道。
+     *
+     * <p>必须放在 ApplicationReadyEvent 而不是 @PostConstruct：后者早于
+     * {@link #restoreOverrides()} 之外的数据库写入顺序保证，此时 Key 可能还没从
+     * system_config 里恢复出来。异步 + 守护线程，预热失败或变慢都不拖启动。</p>
+     */
+    @org.springframework.context.event.EventListener(ApplicationReadyEvent.class)
+    void warmUpGateway() {
+        Thread worker = new Thread(() -> {
+            try {
+                gateway.warmUp();
+            } catch (Exception e) {
+                log.debug("AI 通道预热失败（忽略）：{}", e.getMessage());
+            }
+        }, "ai-warmup");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    private void restoreConfig(String prefix, java.util.function.BiConsumer<String, String> apply, String label) {
         try {
             List<Map<String, Object>> rows = jdbc.queryForList(
-                    "SELECT config_key, config_value FROM system_config WHERE config_key LIKE ?",
-                    MODEL_KEY_PREFIX + "%");
+                    "SELECT config_key, config_value FROM system_config WHERE config_key LIKE ?", prefix + "%");
             for (Map<String, Object> row : rows) {
                 String key = String.valueOf(row.get("config_key"));
                 String value = row.get("config_value") == null ? "" : String.valueOf(row.get("config_value"));
                 if (value.isBlank()) {
                     continue;
                 }
-                String name = key.substring(MODEL_KEY_PREFIX.length());
+                String name = key.substring(prefix.length());
                 try {
-                    gateway.setModel(name, value);
+                    apply.accept(name, value);
                 } catch (Exception e) {
-                    log.warn("恢复 AI 通道 {} 模型失败：{}", name, e.getMessage());
+                    log.warn("恢复 AI 通道 {} 的{}失败：{}", name, label, e.getMessage());
                 }
             }
         } catch (Exception e) {
-            log.warn("读取 AI 模型覆盖配置失败（忽略，沿用默认）：{}", e.getMessage());
+            log.warn("读取 {} 覆盖配置失败（忽略，沿用默认）：{}", prefix, e.getMessage());
         }
+    }
+
+    private void saveConfig(String key, String value, String description) {
+        Integer exists = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM system_config WHERE config_key = ?", Integer.class, key);
+        if (exists != null && exists > 0) {
+            jdbc.update("UPDATE system_config SET config_value = ?, description = ? WHERE config_key = ?",
+                    value, description, key);
+        } else {
+            jdbc.update("""
+                    INSERT INTO system_config (config_key, config_value, value_type, config_group, description)
+                    VALUES (?, ?, 'STRING', 'ai', ?)
+                    """, key, value, description);
+        }
+    }
+
+    private String normalizeName(String name) {
+        return name == null ? "" : name.trim().toLowerCase();
     }
 
     /* ---------------- 学生端 ---------------- */
@@ -200,7 +254,222 @@ public class AiService {
                 Map.of("tutorId", tutorId, "question", question), studentId, tutorId, null);
     }
 
+    /* ---------------- 学生端：AI 优化简历 ---------------- */
+
+    /**
+     * 逐栏优化简历。正文一律以服务端草稿为准，前端在调用前会先保存，
+     * 避免“请求体里的内容”和“已保存草稿”出现两个版本。
+     */
+    public Map<String, Object> resumeOptimize(ResumeOptimizeReq req) {
+        Long studentId = UserContext.get().id();
+        Map<String, Object> draft = resumeDraftService.load(studentId);
+        List<Map<String, Object>> sections = resumeDraftService.pickSections(draft, req == null ? null : req.sections());
+        if (sections.isEmpty()) {
+            throw new BizException(400, "所选栏目内容为空，请先填写简历内容（至少 30 字）后再优化");
+        }
+        int total = sections.stream()
+                .mapToInt(section -> String.valueOf(section.get("content")).length())
+                .sum();
+        if (total < ResumeDraftService.MIN_OPTIMIZE_CHARS) {
+            throw new BizException(400, "所选栏目内容过短（共 " + total + " 字），至少填写 "
+                    + ResumeDraftService.MIN_OPTIMIZE_CHARS + " 字后再优化");
+        }
+        if (total > ResumeDraftService.MAX_TOTAL_CHARS) {
+            throw new BizException(400, "简历内容超过 " + ResumeDraftService.MAX_TOTAL_CHARS + " 字，请精简后再优化");
+        }
+
+        String targetRole = firstNonBlank(
+                req == null ? null : req.targetRole(),
+                resumeDraftService.targetRoleOf(draft),
+                defaultTargetRole(studentId));
+        List<String> focus = normalizeFocus(req == null ? null : req.focus(),
+                resumeDraftService.focusOf(draft));
+        List<String> keywords = normalizeKeywords(req == null ? null : req.keywords(),
+                resumeDraftService.keywordsOf(draft), defaultKeywords(studentId));
+
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("student", studentProfile(studentId));
+        input.put("targetRole", targetRole);
+        input.put("keywords", keywords);
+        input.put("focus", focus);
+        input.put("sections", sections);
+
+        Map<String, Object> data = gateway.resumeOptimize(input);
+        data.putIfAbsent("targetRole", targetRole);
+        data.putIfAbsent("focus", focus);
+        data.put("draftUpdatedAt", draft.get("updatedAt"));
+        return envelope("RESUME_OPTIMIZE", data,
+                Map.of("sections", sections.stream().map(s -> s.get("key")).toList(),
+                        "focus", focus, "targetRole", targetRole),
+                studentId, null, null);
+    }
+
+    /* ---------------- 学生端：AI 面试辅导 ---------------- */
+
+    /** 生成一道练习题；target 导师与方向会带进提示词，用于岗位相关问题模拟。 */
+    public Map<String, Object> interviewCoachQuestion(InterviewCoachQuestionReq req) {
+        Long studentId = UserContext.get().id();
+        String section = normalizeSection(req == null ? null : req.section());
+        Map<String, Object> tutor = resolveCoachTutor(req == null ? null : req.tutorId());
+        String role = firstNonBlank(req == null ? null : req.role(),
+                tutor == null ? null : str(tutor.get("researchDirection")),
+                defaultTargetRole(studentId),
+                "目标方向");
+
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("student", studentProfile(studentId));
+        input.put("section", section);
+        input.put("tutor", tutor);
+        input.put("role", role);
+        input.put("variant", req == null || req.variant() == null ? 0 : Math.max(0, req.variant()));
+        input.put("rubric", rubric());
+
+        Map<String, Object> data = gateway.interviewCoachQuestion(input);
+        data.putIfAbsent("section", section);
+        data.putIfAbsent("sectionTitle", coachSectionTitle(section));
+        data.putIfAbsent("timeLimitSeconds", 120);
+        data.put("targetLabel", firstNonBlank(
+                tutor == null ? null : str(tutor.get("labName")),
+                role));
+        return envelope("INTERVIEW_COACH_Q", data,
+                Map.of("section", section, "tutorId", tutor == null ? "" : tutor.get("tutorId")),
+                studentId, tutor == null ? null : asLong(tutor.get("tutorId")), null);
+    }
+
+    /** 提交作答并返回反馈；每次反馈落一条练习记录，便于回看进步。 */
+    public Map<String, Object> interviewCoachFeedback(InterviewCoachFeedbackReq req) {
+        Long studentId = UserContext.get().id();
+        String section = normalizeSection(req.section());
+        String question = req.question() == null ? "" : req.question().trim();
+        String answer = req.answer() == null ? "" : req.answer().trim();
+        if (question.isBlank()) {
+            throw new BizException(400, "缺少题目，请重新出题");
+        }
+        if (answer.length() < 10) {
+            throw new BizException(400, "回答太短（" + answer.length() + " 字），至少写 10 个字再提交");
+        }
+        if (answer.length() > 2000) {
+            throw new BizException(400, "回答超过 2000 字，请精简后再提交");
+        }
+
+        Map<String, Object> tutor = resolveCoachTutor(req.tutorId());
+        String role = firstNonBlank(req.role(),
+                tutor == null ? null : str(tutor.get("researchDirection")),
+                defaultTargetRole(studentId),
+                "目标方向");
+
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("student", studentProfile(studentId));
+        input.put("section", section);
+        input.put("tutor", tutor);
+        input.put("role", role);
+        input.put("question", question);
+        input.put("questionIntent", req.questionIntent());
+        input.put("answer", answer);
+        input.put("rubric", rubric());
+
+        Map<String, Object> data = gateway.interviewCoachFeedback(input);
+        data.putIfAbsent("section", section);
+        data.putIfAbsent("sectionTitle", coachSectionTitle(section));
+        data.put("question", question);
+        data.put("answer", answer);
+        data.put("targetLabel", firstNonBlank(
+                tutor == null ? null : str(tutor.get("labName")),
+                role));
+        data.put("createdAt", LocalDateTime.now().withNano(0).toString());
+
+        Long recordId = saveCoachRecord(studentId, section, tutor, role, question, answer, data);
+        data.put("recordId", recordId);
+
+        return envelope("INTERVIEW_COACH_FB", data,
+                Map.of("section", section, "question", question, "answerChars", answer.length()),
+                studentId, tutor == null ? null : asLong(tutor.get("tutorId")), null);
+    }
+
+    /** 最近 10 次练习记录（本人可见）。 */
+    public List<Map<String, Object>> interviewCoachHistory() {
+        Long studentId = UserContext.get().id();
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT r.id, r.section, r.tutor_id AS tutorId,
+                       u.name AS tutorName, r.target_role AS targetRole,
+                       r.question, r.answer, r.score, r.feedback, r.created_at AS createdAt
+                  FROM interview_coach_records r
+                  LEFT JOIN tutors t ON t.id = r.tutor_id
+                  LEFT JOIN users u ON u.id = t.user_id
+                 WHERE r.student_id = ?
+                 ORDER BY r.created_at DESC, r.id DESC
+                 LIMIT 10
+                """, studentId);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            Map<String, Object> item = new LinkedHashMap<>(row);
+            item.put("sectionTitle", coachSectionTitle(String.valueOf(row.get("section"))));
+            item.put("feedback", parseFeedback(row.get("feedback")));
+            result.add(item);
+        }
+        return result;
+    }
+
     /* ---------------- 教师端 ---------------- */
+
+    /**
+     * 导师端：查看「自己的分身」接入状态与身份设定。
+     *
+     * <p>学生端看到的分身由本接口的数据驱动，导师据此确认模型是否真的接通、
+     * 当前用的是哪个通道与模型、身份设定是自己的还是系统按资料推导的。</p>
+     */
+    public Map<String, Object> myAvatar() {
+        Long tutorId = currentTutorId();
+        Map<String, Object> tutor = tutorById(tutorId);
+        if (tutor == null) {
+            throw new BizException(403, "当前账号没有对应的导师资料");
+        }
+        Map<String, Object> persona = personaOf(tutorId, tutor);
+        boolean placeholder = "mock".equals(gateway.provider());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("tutorId", tutorId);
+        result.put("tutorName", tutor.get("tutorName"));
+        result.put("labName", tutor.get("labName"));
+        result.put("researchDirection", tutor.get("researchDirection"));
+        result.put("persona", persona);
+        result.put("engine", gateway.provider());
+        result.put("provider", gateway.activeName());
+        result.put("model", gateway.model());
+        result.put("placeholder", placeholder);
+        // 「已接入」= 走的是真实模型通道，而不是内置规则引擎
+        result.put("connected", !placeholder);
+        return result;
+    }
+
+    /** 导师端：保存自己的分身设定。只能改自己，导师 id 由登录态推导，不接受前端传入 */
+    public void saveMyPersona(Map<String, Object> body) {
+        savePersona(currentTutorId(), body);
+    }
+
+    /**
+     * 导师端：用自己分身做一次试聊，验证「学生问过来会得到什么」。
+     * 与学生的真实提问共用同一条网关链路，但学生问题不会进这里。
+     */
+    public Map<String, Object> testMyAvatarChat(String question) {
+        if (question == null || question.isBlank()) {
+            throw new BizException("请先输入想问的问题");
+        }
+        Long tutorId = currentTutorId();
+        Map<String, Object> tutor = tutorById(tutorId);
+        if (tutor == null) {
+            throw new BizException(403, "当前账号没有对应的导师资料");
+        }
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("persona", personaOf(tutorId, tutor));
+        input.put("tutor", tutor);
+        input.put("question", question.trim());
+        input.put("history", List.of());
+
+        Map<String, Object> data = gateway.avatarChat(input);
+        return envelope("AVATAR_CHAT_TEST", data, Map.of("question", question.trim()),
+                null, tutorId, null);
+    }
 
     public Map<String, Object> resumeReview(Long applicationId) {
         Long tutorId = currentTutorId();
@@ -288,6 +557,179 @@ public class AiService {
     }
 
     /* ---------------- 数据读取 ---------------- */
+
+    private List<String> normalizeFocus(List<String> requested, List<String> fallback) {
+        List<String> source = requested == null || requested.isEmpty() ? fallback : requested;
+        List<String> focus = new ArrayList<>();
+        for (String item : source) {
+            String key = item == null ? "" : item.trim();
+            if (ResumeDraftService.FOCUS_KEYS.contains(key) && !focus.contains(key)) {
+                focus.add(key);
+            }
+        }
+        return focus.isEmpty() ? ResumeDraftService.FOCUS_KEYS : focus;
+    }
+
+    private List<String> normalizeKeywords(List<String> requested, List<String> draftKeywords,
+                                          List<String> defaults) {
+        List<String> source = requested != null && !requested.isEmpty()
+                ? requested
+                : (draftKeywords != null && !draftKeywords.isEmpty() ? draftKeywords : defaults);
+        List<String> keywords = new ArrayList<>();
+        for (String item : source) {
+            if (item == null) {
+                continue;
+            }
+            String word = item.trim().replaceAll("\\s+", " ");
+            if (word.isEmpty() || keywords.contains(word)) {
+                continue;
+            }
+            keywords.add(word.length() > 30 ? word.substring(0, 30) : word);
+            if (keywords.size() >= 12) {
+                break;
+            }
+        }
+        return keywords;
+    }
+
+    /** 目标岗位默认取当前第一志愿导师的研究方向；未填报时退回专业。 */
+    private String defaultTargetRole(Long studentId) {
+        try {
+            List<Map<String, Object>> rows = jdbc.queryForList("""
+                    SELECT t.research_direction AS direction, l.name AS labName
+                      FROM applications a
+                      JOIN tutors t ON t.id = a.tutor_1_id
+                      JOIN labs l ON l.id = t.lab_id
+                     WHERE a.student_id = ? AND a.round_no = ?
+                     LIMIT 1
+                    """, studentId, phaseService.currentRound());
+            if (!rows.isEmpty()) {
+                String direction = str(rows.get(0).get("direction"));
+                if (!direction.isBlank()) {
+                    return direction;
+                }
+                String labName = str(rows.get(0).get("labName"));
+                if (!labName.isBlank()) {
+                    return labName;
+                }
+            }
+        } catch (Exception e) {
+            log.debug("读取目标方向失败（忽略）：{}", e.getMessage());
+        }
+        String major = str(studentProfile(studentId).get("major"));
+        return major.isBlank() ? "目标方向" : major + "相关方向";
+    }
+
+    /** 学生已填的技能标签作为目标关键词的默认值。 */
+    private List<String> defaultKeywords(Long studentId) {
+        String tags = str(studentProfile(studentId).get("skillTags"));
+        if (tags.isBlank()) {
+            return List.of();
+        }
+        List<String> keywords = new ArrayList<>();
+        for (String part : tags.split("[,，;；/、|]")) {
+            String word = part.trim();
+            if (!word.isEmpty() && !keywords.contains(word)) {
+                keywords.add(word);
+            }
+        }
+        return keywords;
+    }
+
+    private String normalizeSection(String section) {
+        String value = section == null ? "" : section.trim();
+        if (value.isEmpty()) {
+            return "common";
+        }
+        if (!List.of("self-intro", "common", "role").contains(value)) {
+            throw new BizException(400, "面试环节不合法：仅支持自我介绍 / 常见问题 / 岗位相关问题");
+        }
+        return value;
+    }
+
+    private String coachSectionTitle(String section) {
+        return switch (section == null ? "" : section) {
+            case "self-intro" -> "自我介绍";
+            case "role" -> "岗位相关问题模拟";
+            default -> "常见问题演练";
+        };
+    }
+
+    private Map<String, Object> resolveCoachTutor(Long tutorId) {
+        if (tutorId == null) {
+            return null;
+        }
+        Map<String, Object> tutor = tutorById(tutorId);
+        if (tutor == null) {
+            throw new BizException(400, "目标导师不存在，请重新选择");
+        }
+        return tutor;
+    }
+
+    private Long saveCoachRecord(Long studentId, String section, Map<String, Object> tutor, String role,
+                                 String question, String answer, Map<String, Object> feedback) {
+        try {
+            Map<String, Object> record = new LinkedHashMap<>(feedback);
+            record.remove("question");
+            record.remove("answer");
+            record.remove("recordId");
+            String json = objectMapper.writeValueAsString(record);
+            KeyHolder keyHolder = new GeneratedKeyHolder();
+            jdbc.update(connection -> {
+                PreparedStatement ps = connection.prepareStatement("""
+                        INSERT INTO interview_coach_records
+                            (student_id, section, tutor_id, target_role, question, answer, score, feedback)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, Statement.RETURN_GENERATED_KEYS);
+                ps.setLong(1, studentId);
+                ps.setString(2, section);
+                Long tutorId = tutor == null ? null : asLong(tutor.get("tutorId"));
+                if (tutorId == null) {
+                    ps.setNull(3, Types.BIGINT);
+                } else {
+                    ps.setLong(3, tutorId);
+                }
+                ps.setString(4, role);
+                ps.setString(5, question);
+                ps.setString(6, answer);
+                Object score = feedback.get("score");
+                if (score instanceof Number number) {
+                    ps.setInt(7, number.intValue());
+                } else {
+                    ps.setNull(7, Types.INTEGER);
+                }
+                ps.setString(8, json);
+                return ps;
+            }, keyHolder);
+            Number key = keyHolder.getKey();
+            return key == null ? null : key.longValue();
+        } catch (Exception e) {
+            log.warn("面试辅导记录保存失败（不影响反馈返回）：{}", e.getMessage());
+            return null;
+        }
+    }
+
+    private Map<String, Object> parseFeedback(Object value) {
+        if (value == null || String.valueOf(value).isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(String.valueOf(value),
+                    new TypeReference<LinkedHashMap<String, Object>>() {
+                    });
+        } catch (Exception e) {
+            return Map.of();
+        }
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
 
     private Map<String, Object> studentProfile(Long studentId) {
         List<Map<String, Object>> rows = jdbc.queryForList("""

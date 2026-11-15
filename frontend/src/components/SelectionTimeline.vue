@@ -2,7 +2,7 @@
   <section class="timeline" :class="{ compact }">
     <header class="tl-head">
       <div class="tl-head-main">
-        <h3>双选流程与时间轴</h3>
+        <h3>{{ compact ? '报名进度' : '双选流程与时间轴' }}</h3>
         <p class="tl-sub">
           <template v-if="activeStep">
             当前处于<b>{{ activeStep.title }}</b>
@@ -16,7 +16,30 @@
       </el-button>
     </header>
 
-    <ol class="tl-list">
+    <!-- 紧凑模式：横向阶段卡片，对应「八步流程」的进度视图 -->
+    <ol v-if="compact" class="tl-strip">
+      <li
+        v-for="step in steps"
+        :key="step.code + (step.roundNo ?? '')"
+        class="tl-card"
+        :class="step.state.toLowerCase()"
+      >
+        <div class="tl-card-top">
+          <span class="tl-num">{{ String(step.seq).padStart(2, '0') }}</span>
+          <span class="tl-pill">{{ step.stateLabel }}</span>
+        </div>
+        <div class="tl-card-title">{{ step.title }}</div>
+        <p v-show="expanded" class="tl-card-desc">{{ step.desc }}</p>
+        <div class="tl-card-time">
+          <el-icon><Clock /></el-icon>
+          <span>{{ shortTime(step.startAt) }} — {{ shortTime(step.endAt) }}</span>
+        </div>
+        <span v-if="step.state === 'ACTIVE'" class="tl-card-left">剩余 {{ countdown(step.endAt) }}</span>
+      </li>
+    </ol>
+
+    <!-- 完整模式（管理端可编辑）：保留纵向列表，只做换肤 -->
+    <ol v-else class="tl-list">
       <li v-for="step in steps" :key="step.code + (step.roundNo ?? '')" class="tl-item" :class="step.state.toLowerCase()">
         <span class="tl-dot">{{ step.seq }}</span>
         <div class="tl-body">
@@ -26,7 +49,7 @@
               {{ step.stateLabel }}
             </span>
           </div>
-          <p v-show="expanded || !compact" class="tl-desc">{{ step.desc }}</p>
+          <p class="tl-desc">{{ step.desc }}</p>
           <div class="tl-time">
             <el-icon><Clock /></el-icon>
             <span>{{ fmtTime(step.startAt) }} — {{ fmtTime(step.endAt) }}</span>
@@ -52,7 +75,7 @@ const props = defineProps({
   // /api/meta/phase 返回的 phases（含轮次展开的所有阶段）
   phases: { type: Array, default: () => [] },
   round: { type: Number, default: 1 },
-  // 紧凑模式：默认折叠，需要点开才看完整 8 步
+  // 紧凑模式：横向卡片条，默认折叠说明
   compact: { type: Boolean, default: false },
   // 管理端为 true，底部提示换成可编辑口径
   canEdit: { type: Boolean, default: false }
@@ -140,6 +163,13 @@ const activeStep = computed(() => {
 
 const countdownText = computed(() => (activeStep.value ? countdown(activeStep.value.endAt) : ''))
 
+/** 卡片条空间有限，时间只保留「月-日」 */
+function shortTime(value) {
+  if (!value) return '—'
+  const text = fmtTime(value)
+  return text.replace(/^\d{4}-/, '')
+}
+
 const contactText = computed(() =>
   props.canEdit
     ? '如需调整节点时间，可在此页直接修改或点击「立即进入 / 立即结束」；流程口径有疑问请联系学院教务。'
@@ -150,9 +180,10 @@ const contactText = computed(() =>
 <style scoped>
 .timeline {
   background: var(--surface);
-  border: 1px solid var(--separator);
-  border-radius: var(--radius-lg);
-  padding: 16px 18px 12px;
+  border: 1px solid rgba(28, 111, 102, 0.07);
+  border-radius: var(--clay-radius-lg);
+  padding: 18px 20px 14px;
+  box-shadow: var(--clay-shadow-sm), var(--clay-inset);
 }
 
 .tl-head {
@@ -168,29 +199,206 @@ const contactText = computed(() =>
 
 .tl-head h3 {
   margin: 0;
-  font-size: 14px;
-  font-weight: 650;
-  color: var(--label-1);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--ink-900);
 }
 
 .tl-sub {
-  margin: 4px 0 0;
+  margin: 5px 0 0;
   font-size: 12px;
-  color: var(--label-2);
+  color: var(--ink-500);
 }
 
 .tl-sub b {
-  color: var(--ios-blue);
-  font-weight: 650;
+  color: var(--brand-600);
+  font-weight: 700;
 }
 
 .tl-left {
-  color: var(--ios-orange-dark);
+  color: var(--sand-600);
+  font-weight: 600;
 }
+
+/* ============================================================================
+   紧凑模式：横向阶段卡片
+   ============================================================================ */
+
+.tl-strip {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 2px 2px 6px;
+  display: grid;
+  grid-auto-flow: column;
+  /* 1fr 让八步在桌面端正好排满，不撑出滚动条 */
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+
+.tl-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.tl-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 118px;
+  padding: 13px 14px 12px;
+  border-radius: 18px;
+  background: var(--surface);
+  border: 1px solid rgba(28, 111, 102, 0.07);
+  box-shadow: 0 2px 6px rgba(20, 78, 70, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  overflow: hidden;
+  scroll-snap-align: start;
+  transition: transform 0.28s var(--clay-ease), box-shadow 0.28s var(--clay-ease);
+}
+
+.tl-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px -18px rgba(20, 78, 70, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.tl-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.tl-num {
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.06em;
+  font-variant-numeric: tabular-nums;
+  color: rgba(47, 157, 146, 0.18);
+}
+
+.tl-pill {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink-400);
+  background: rgba(91, 125, 119, 0.09);
+  white-space: nowrap;
+}
+
+.tl-card-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  color: var(--ink-800);
+}
+
+.tl-card-desc {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.62;
+  color: var(--ink-500);
+}
+
+.tl-card-time {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-400);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tl-card-left {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--brand-700);
+}
+
+/* ---- 进行中：薄荷实底 ---- */
+
+.tl-card.active {
+  background: linear-gradient(160deg, #3cb8a8 0%, #2f9d92 58%, #248a80 100%);
+  border-color: transparent;
+  box-shadow: 0 16px 30px -22px rgba(47, 157, 146, 1), inset 0 1px 0 rgba(255, 255, 255, 0.26);
+}
+
+.tl-card.active .tl-num {
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.tl-card.active .tl-pill {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.tl-card.active .tl-card-title {
+  color: #fff;
+}
+
+.tl-card.active .tl-card-desc {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.tl-card.active .tl-card-time {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.tl-card.active .tl-card-left {
+  color: #fff;
+}
+
+/* ---- 未开始：奶油底 ---- */
+
+.tl-card.pending {
+  background: var(--cream-100);
+  border-color: rgba(217, 164, 95, 0.16);
+}
+
+.tl-card.pending .tl-num {
+  color: rgba(217, 164, 95, 0.34);
+}
+
+.tl-card.pending .tl-pill {
+  color: var(--sand-600);
+  background: rgba(217, 164, 95, 0.16);
+}
+
+/* ---- 已结束：灰化 ---- */
+
+.tl-card.closed {
+  background: rgba(91, 125, 119, 0.045);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.tl-card.closed .tl-num {
+  color: rgba(91, 125, 119, 0.16);
+}
+
+.tl-card.closed .tl-card-title {
+  color: var(--ink-400);
+  font-weight: 600;
+}
+
+/* ============================================================================
+   完整模式：纵向列表
+   ============================================================================ */
 
 .tl-list {
   list-style: none;
-  margin: 14px 0 0;
+  margin: 16px 0 0;
   padding: 0;
   position: relative;
 }
@@ -199,14 +407,13 @@ const contactText = computed(() =>
   position: relative;
   display: flex;
   gap: 12px;
-  padding: 0 0 14px;
+  padding: 0 0 16px;
 }
 
 .tl-item:last-child {
   padding-bottom: 2px;
 }
 
-/* 左侧竖线 */
 .tl-item::before {
   content: '';
   position: absolute;
@@ -214,7 +421,7 @@ const contactText = computed(() =>
   top: 26px;
   bottom: 0;
   width: 2px;
-  background: var(--separator);
+  background: rgba(28, 111, 102, 0.08);
 }
 
 .tl-item:last-child::before {
@@ -222,7 +429,7 @@ const contactText = computed(() =>
 }
 
 .tl-item.active::before {
-  background: linear-gradient(180deg, var(--ios-blue), var(--separator));
+  background: linear-gradient(180deg, var(--brand-400), rgba(28, 111, 102, 0.08));
 }
 
 .tl-dot {
@@ -236,20 +443,15 @@ const contactText = computed(() =>
   font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  background: var(--fill-1);
-  color: var(--label-3);
+  background: rgba(47, 157, 146, 0.08);
+  color: var(--ink-400);
   z-index: 1;
 }
 
 .tl-item.active .tl-dot {
-  background: var(--ios-blue);
+  background: linear-gradient(150deg, #4fc0b2, #2f9d92);
   color: #fff;
-  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.14);
-}
-
-.tl-item.closed .tl-dot {
-  background: var(--fill-2);
-  color: var(--label-3);
+  box-shadow: 0 0 0 4px rgba(47, 157, 146, 0.14);
 }
 
 .tl-body {
@@ -262,39 +464,34 @@ const contactText = computed(() =>
   align-items: center;
   gap: 8px;
   font-size: 13.5px;
-  font-weight: 600;
-  color: var(--label-1);
+  font-weight: 650;
+  color: var(--ink-900);
   line-height: 26px;
 }
 
 .tl-item.closed .tl-title {
-  color: var(--label-2);
+  color: var(--ink-500);
 }
 
 .tl-state {
-  font-size: 11px;
-  font-weight: 500;
-  padding: 1px 7px;
-  border-radius: var(--radius-pill);
-  background: var(--fill-1);
-  color: var(--label-3);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(91, 125, 119, 0.09);
+  color: var(--ink-400);
 }
 
 .tl-state.active {
-  background: rgba(0, 122, 255, 0.12);
-  color: var(--ios-blue);
-}
-
-.tl-state.closed {
-  background: var(--fill-1);
-  color: var(--label-3);
+  background: rgba(47, 157, 146, 0.12);
+  color: var(--brand-700);
 }
 
 .tl-desc {
-  margin: 2px 0 0;
+  margin: 3px 0 0;
   font-size: 12px;
-  line-height: 1.65;
-  color: var(--label-2);
+  line-height: 1.68;
+  color: var(--ink-500);
 }
 
 .tl-time {
@@ -303,62 +500,46 @@ const contactText = computed(() =>
   align-items: center;
   gap: 5px;
   font-size: 11.5px;
-  color: var(--label-3);
+  color: var(--ink-400);
   font-variant-numeric: tabular-nums;
   flex-wrap: wrap;
 }
 
 .tl-countdown {
-  color: var(--ios-orange-dark);
+  color: var(--sand-600);
+  font-weight: 600;
 }
 
 .tl-contact {
-  margin: 10px 0 0;
-  padding-top: 10px;
-  border-top: 1px dashed var(--separator);
+  margin: 12px 0 0;
+  padding-top: 11px;
+  border-top: 1px dashed rgba(28, 111, 102, 0.12);
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 11.5px;
-  color: var(--label-3);
+  color: var(--ink-400);
 }
 
-/* 紧凑模式：压缩行高，只保留标题 / 状态 / 时间，说明需手动展开 */
 .compact {
-  padding: 12px 16px 8px;
+  padding: 16px 18px 10px;
 }
 
-.compact .tl-item {
-  padding-bottom: 6px;
-}
+@media (max-width: 1000px) {
+  /* 窄屏不再均分，改为固定宽度横向滚动，保证文字可读 */
+  .tl-strip {
+    grid-auto-columns: 132px;
+  }
 
-.compact .tl-dot {
-  width: 24px;
-  height: 22px;
-  font-size: 11px;
-  border-radius: 11px;
-}
+  .tl-num {
+    font-size: 26px;
+  }
 
-.compact .tl-item::before {
-  left: 11px;
-  top: 22px;
-}
+  .tl-card {
+    min-height: 108px;
+    padding: 11px 12px 10px;
+  }
 
-.compact .tl-title {
-  font-size: 13px;
-  line-height: 22px;
-}
-
-.compact .tl-time {
-  margin-top: 1px;
-  font-size: 11px;
-}
-
-.compact .tl-list {
-  margin-top: 10px;
-}
-
-@media (max-width: 700px) {
   .tl-desc {
     font-size: 11.5px;
   }

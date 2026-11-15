@@ -297,7 +297,7 @@ CREATE TABLE IF NOT EXISTS interview_scores (
 -- AI 调用留痕（便于回溯与效果评估）
 CREATE TABLE IF NOT EXISTS ai_reviews (
   id             BIGINT       NOT NULL AUTO_INCREMENT,
-  kind           VARCHAR(30)  NOT NULL COMMENT 'INTERVIEW_TIPS/RECOMMEND/RESUME_REVIEW/AVATAR_CHAT',
+  kind           VARCHAR(30)  NOT NULL COMMENT 'INTERVIEW_TIPS/RECOMMEND/RESUME_REVIEW/AVATAR_CHAT/RESUME_OPTIMIZE/INTERVIEW_COACH_Q/INTERVIEW_COACH_FB',
   student_id     BIGINT       DEFAULT NULL,
   tutor_id       BIGINT       DEFAULT NULL,
   application_id BIGINT       DEFAULT NULL,
@@ -336,6 +336,33 @@ CREATE TABLE IF NOT EXISTS resume_texts (
   updated_at DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (resume_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='简历正文抽取缓存';
+
+-- 结构化简历草稿：AI 优化简历的编辑底稿（栏目正文 / 目标岗位 / 关键词 / 侧重点）。
+-- 与 student_resumes 的分工：student_resumes 存原始 PDF/DOC/DOCX 文件，本表存可编辑、可保存的结构化文本。
+CREATE TABLE IF NOT EXISTS resume_drafts (
+  student_id BIGINT       NOT NULL COMMENT 'users.id',
+  content    MEDIUMTEXT   NOT NULL COMMENT '草稿 JSON：sections / targetRole / keywords / focus',
+  source     VARCHAR(30)  NOT NULL DEFAULT 'manual' COMMENT 'manual / resume-text',
+  updated_at DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (student_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='结构化简历草稿（AI 优化底稿）';
+
+-- AI 面试辅导练习记录：一次提问 + 一次作答 + 一份反馈。
+-- 仅本人可见，用于回看进步与复盘表达问题，不参与导师评分。
+CREATE TABLE IF NOT EXISTS interview_coach_records (
+  id          BIGINT       NOT NULL AUTO_INCREMENT,
+  student_id  BIGINT       NOT NULL COMMENT 'users.id',
+  section     VARCHAR(20)  NOT NULL COMMENT 'self-intro / common / role',
+  tutor_id    BIGINT       DEFAULT NULL COMMENT '目标导师（可选）',
+  target_role VARCHAR(100) DEFAULT NULL COMMENT '目标岗位 / 方向',
+  question    TEXT         NOT NULL,
+  answer      TEXT         NOT NULL,
+  score       INT          DEFAULT NULL COMMENT '综合得分 0-100',
+  feedback    MEDIUMTEXT   COMMENT '反馈 JSON：维度 / 亮点 / 改进 / 参考表达 / 追问',
+  created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_coach_student_time (student_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI 面试辅导练习记录';
 
 -- 师生直连私信：学生可直接联系任意导师/负责人，导师在线回复。
 -- 与 notifications 的区别：通知是单向系统广播，这里是双向会话，有已读语义与历史。

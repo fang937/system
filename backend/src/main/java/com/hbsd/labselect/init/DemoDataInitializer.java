@@ -40,6 +40,9 @@ public class DemoDataInitializer implements ApplicationRunner {
 
     public static final String DEMO_PASSWORD = "123456";
 
+    /** 首次演示数据写入完成标记：重置阶段后重启不会再把旧志愿/场景灌回来。 */
+    private static final String SEED_FLAG = "demo.seed.completed";
+
     private final UserMapper userMapper;
     private final SelectionPhaseMapper phaseMapper;
     private final SystemConfigMapper configMapper;
@@ -75,11 +78,29 @@ public class DemoDataInitializer implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        // 管理员账号独立兜底：即使演示数据已完成初始化，也要保证新库有管理员可登录
+        seedAdmin();
+        if (seeded()) {
+            log.info("演示数据已初始化过，跳过重复写入（重置阶段后不会被旧数据覆盖）");
+            return;
+        }
         seedConfig();
         seedPhases();
         seedStudents();
         seedApplications();
+        markSeeded();
         log.info("演示数据就绪：当前轮次第 {} 轮，活跃阶段 {}", currentRound(), phaseLabel());
+    }
+
+    /** 新库缺少管理员时补一个，账号 admin / 123456。 */
+    private void seedAdmin() {
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM users WHERE role = 'SYS_ADMIN'", Integer.class);
+        if (count != null && count > 0) {
+            return;
+        }
+        seedUser("admin", "张建国", "SYS_ADMIN", null, null);
+        log.info("默认管理员已创建：admin / {}", DEMO_PASSWORD);
     }
 
     private void seedConfig() {
@@ -223,6 +244,20 @@ public class DemoDataInitializer implements ApplicationRunner {
         List<String> v = jdbc.queryForList(
                 "SELECT config_value FROM system_config WHERE config_key = 'round.current'", String.class);
         return v.isEmpty() ? 1 : Integer.parseInt(v.get(0));
+    }
+
+    private boolean seeded() {
+        List<String> values = jdbc.queryForList(
+                "SELECT config_value FROM system_config WHERE config_key = ?", String.class, SEED_FLAG);
+        return !values.isEmpty() && "1".equals(values.get(0));
+    }
+
+    private void markSeeded() {
+        jdbc.update("""
+                INSERT INTO system_config (config_key, config_value, value_type, config_group, description)
+                VALUES (?, '1', 'STRING', 'DEMO', '演示数据首次写入完成标记')
+                ON DUPLICATE KEY UPDATE config_value = '1'
+                """, SEED_FLAG);
     }
 
     private String phaseLabel() {

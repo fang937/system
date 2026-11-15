@@ -16,12 +16,15 @@ const routes = [
       { path: 'student/tutors', component: () => import('../views/student/Tutors.vue'), meta: { caps: ['STUDENT'], title: '导师与方向' } },
       { path: 'student/application', component: () => import('../views/student/Application.vue'), meta: { caps: ['STUDENT'], title: '我的志愿' } },
       { path: 'student/resume', component: () => import('../views/student/Resume.vue'), meta: { caps: ['STUDENT'], title: '我的简历' } },
+      { path: 'student/resume-optimize', component: () => import('../views/student/ResumeOptimize.vue'), meta: { caps: ['STUDENT'], title: 'AI 优化简历' } },
+      { path: 'student/interview-coach', component: () => import('../views/student/InterviewCoach.vue'), meta: { caps: ['STUDENT'], title: 'AI 面试辅导' } },
       { path: 'student/offers', component: () => import('../views/student/Offers.vue'), meta: { caps: ['STUDENT'], title: '我的 Offer' } },
       { path: 'student/result', component: () => import('../views/student/Result.vue'), meta: { caps: ['STUDENT'], title: '录取结果' } },
 
       // 导师 + 实训室管理员合并工作台
       { path: 'workbench/applicants', component: () => import('../views/workbench/Applicants.vue'), meta: { caps: ['TUTOR_WORK'], title: '报考我的学生' } },
       { path: 'workbench/offers', component: () => import('../views/workbench/Offers.vue'), meta: { caps: ['TUTOR_WORK'], title: '我的录取' } },
+      { path: 'workbench/avatar', component: () => import('../views/workbench/MyAvatar.vue'), meta: { caps: ['TUTOR_WORK'], title: '我的 AI 分身' } },
       { path: 'workbench/schedules', component: () => import('../views/workbench/Schedules.vue'), meta: { caps: ['LAB_MANAGE'], title: '面试排期' } },
       { path: 'workbench/progress', component: () => import('../views/workbench/Progress.vue'), meta: { caps: ['LAB_MANAGE'], title: '本室招生进度' } },
       { path: 'workbench/lab-adjust', component: () => import('../views/workbench/LabAdjust.vue'), meta: { caps: ['LAB_MANAGE'], title: '室内调剂' } },

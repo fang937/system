@@ -21,7 +21,7 @@ import java.util.Map;
  * OpenAI 兼容协议的网关实现（OpenAI / DeepSeek / 通义千问 / 智谱等均可）。
  *
  * <p>接入方式：把 AI_API_KEY 填上即可，无需改代码。可选 AI_BASE_URL 与 AI_MODEL。
- * 四个能力都是「给定资料 + 固定 JSON 结构」的一次性调用，不做自建 Agent 编排。</p>
+ * 各类能力都是「给定资料 + 固定 JSON 结构」的一次性调用，不做自建 Agent 编排。</p>
  */
 @Slf4j
 public class OpenAiCompatibleGateway implements AiGateway {
@@ -49,6 +49,32 @@ public class OpenAiCompatibleGateway implements AiGateway {
             {"answer":"以导师 AI 分身的口吻（第一人称，不要自称助手），120 字以内","citations":["引用了哪些资料点"],
              "boundary":"边界声明，如不承诺录取"}""";
 
+    private static final String SCHEMA_OPTIMIZE = """
+            {"summary":{"scoreBefore":0,"scoreAfter":0,"sectionCount":0,"headline":"一句话结论","advice":"最重要的改法"},
+             "suggestions":[{"section":"projects","sectionTitle":"项目经历","before":"原文","after":"改写后",
+              "reasons":["改动理由"],"issues":["原文问题"],"focus":["concise"],"changed":true,
+              "scoreBefore":0,"scoreAfter":0}],
+             "keywordMatches":{"matched":["已覆盖关键词"],"missing":["建议补充关键词"]}}
+            要求：每个输入 section 最多 1 条建议，section 必须原样返回；before 必须是输入原文（可截取片段），
+            after 只能调整措辞、结构与信息顺序；不得新增学生未提供的项目、公司、数字、奖项；
+            缺少量化数据时用「（补充：…）」占位，不得编造；changed 表示 after 是否与 before 不同。""";
+
+    private static final String SCHEMA_COACH_Q = """
+            {"section":"self-intro|common|role","sectionTitle":"环节名","question":"问题原文",
+             "intent":"想验证什么","tips":["回答提示"],"timeLimitSeconds":120}
+            要求：只出 1 道题，问题要具体到可以张口回答；不透露任何真实面试原题。""";
+
+    private static final String SCHEMA_COACH_FB = """
+            {"score":0,"level":"优秀|良好|合格|待提升",
+             "dimensions":[{"code":"STRUCTURE","name":"结构与逻辑","score":0,"comment":"打分依据"},
+              {"code":"CONTENT","name":"内容充实度","score":0,"comment":"打分依据"},
+              {"code":"EXPRESSION","name":"表达清晰度","score":0,"comment":"打分依据"},
+              {"code":"MATCH","name":"岗位匹配度","score":0,"comment":"打分依据"}],
+             "strengths":["做得好的地方"],"improvements":["可改进的地方"],
+             "sampleAnswer":"参考表达（结构模板，含占位提示）","followUp":"一道追问题"}
+            要求：评分只依据学生本次回答，不得虚构学生未说的经历；score 与各维度 score 均为 0-100 的整数；
+            sampleAnswer 只能给结构模板与「……」占位，不得编造具体项目、公司或数字。""";
+
     private final AiProperties properties;
     private final AiProperties.Provider provider;
     private final ObjectMapper mapper;
@@ -67,6 +93,29 @@ public class OpenAiCompatibleGateway implements AiGateway {
     public String provider() {
         return provider.getName() == null || provider.getName().isBlank()
                 ? "openai-compatible" : provider.getName();
+    }
+
+    /**
+     * 预热连接：对 {base}/models 发一次短超时请求，把 DNS 解析与 TCP/TLS 握手提前做掉。
+     *
+     * <p>只关心连接是否建立，不看响应码（401/403 同样说明链路已通），
+     * 因此不会消耗 token，也不会因为 Key 权限不足而影响主流程。</p>
+     */
+    @Override
+    public void warmUp() {
+        long start = System.currentTimeMillis();
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(base() + "/models"))
+                    .timeout(Duration.ofSeconds(6))
+                    .header("Accept", "application/json")
+                    .header("Authorization", "Bearer " + provider.getApiKey())
+                    .GET()
+                    .build();
+            http.send(request, HttpResponse.BodyHandlers.discarding());
+            log.info("[{}] AI 通道预热完成，用时 {}ms", provider(), System.currentTimeMillis() - start);
+        } catch (Exception e) {
+            log.debug("[{}] AI 通道预热未完成（忽略，不影响功能）：{}", provider(), e.getMessage());
+        }
     }
 
     @Override
@@ -278,6 +327,105 @@ public class OpenAiCompatibleGateway implements AiGateway {
         return data;
     }
 
+    /* ---------------- 学生端：AI 优化简历 / AI 面试辅导 ---------------- */
+
+    @Override
+    public Map<String, Object> resumeOptimize(Map<String, Object> input) {
+        Map<String, Object> data = complete(
+                "你是校招简历顾问。逐栏改写学生简历：只调整措辞、结构与信息顺序，不改变事实，"
+                        + "不新增未提供的项目、公司、数字、奖项。重点覆盖：措辞精炼、成果量化、"
+                        + "目标岗位关键词自然融入、专业性与可读性。targetRole 与 keywords 是目标，"
+                        + "不得为了匹配关键词编造经历；没有出现的关键词写入 keywordMatches.missing。"
+                        + "sections 是学生已保存的简历栏目原文（来自结构化草稿）。",
+                SCHEMA_OPTIMIZE, input);
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        if (data.get("summary") instanceof Map<?, ?> map) {
+            map.forEach((k, v) -> summary.put(String.valueOf(k), v));
+        }
+        data.put("summary", summary);
+
+        List<Map<String, Object>> suggestions = new ArrayList<>();
+        for (Map<String, Object> item : asObjects(data.get("suggestions"))) {
+            Map<String, Object> row = new LinkedHashMap<>(item);
+            String before = stringOf(row.get("before"));
+            String after = stringOf(row.get("after"));
+            if (after.isBlank()) {
+                after = before;
+            }
+            row.put("before", before);
+            row.put("after", after);
+            row.putIfAbsent("sectionTitle", stringOf(row.get("section")));
+            row.put("reasons", asStrings(row.get("reasons")));
+            row.put("issues", asStrings(row.get("issues")));
+            row.put("focus", asStrings(row.get("focus")));
+            row.put("changed", !before.equals(after));
+            row.put("scoreBefore", clamp(intOf(row.get("scoreBefore"))));
+            row.put("scoreAfter", clamp(intOf(row.get("scoreAfter"))));
+            suggestions.add(row);
+        }
+        data.put("suggestions", suggestions);
+        if (!(data.get("keywordMatches") instanceof Map<?, ?> matches)) {
+            Map<String, Object> empty = new LinkedHashMap<>();
+            empty.put("matched", new ArrayList<>());
+            empty.put("missing", new ArrayList<>());
+            data.put("keywordMatches", empty);
+        }
+        data.putIfAbsent("disclaimer", "AI 只调整措辞与结构，不会新增你的经历；带「（补充：…）」的占位内容需要你填写真实数据后再保存。");
+        return data;
+    }
+
+    @Override
+    public Map<String, Object> interviewCoachQuestion(Map<String, Object> input) {
+        Map<String, Object> data = complete(
+                "你是校招面试教练。根据面试环节出 1 道题：self-intro 自我介绍、common 常见行为问题、"
+                        + "role 岗位/方向相关问题。role 与 tutor 是目标岗位信息；问题要具体、可张口回答，"
+                        + "不透露任何真实面试原题，不承诺录取结果。",
+                SCHEMA_COACH_Q, input);
+
+        data.putIfAbsent("section", stringOf(input.get("section")));
+        data.putIfAbsent("sectionTitle", "面试练习");
+        data.putIfAbsent("question", "请先做一个简短的自我介绍。");
+        data.putIfAbsent("intent", "考察表达结构与自我定位");
+        data.put("tips", asStrings(data.get("tips")));
+        data.put("timeLimitSeconds", intOf(data.get("timeLimitSeconds")) > 0
+                ? intOf(data.get("timeLimitSeconds")) : 120);
+        return data;
+    }
+
+    @Override
+    public Map<String, Object> interviewCoachFeedback(Map<String, Object> input) {
+        Map<String, Object> data = complete(
+                "你是校招面试教练。针对学生的一次回答给出反馈：评分必须基于回答文本，"
+                        + "不得虚构学生未说的内容；sampleAnswer 只给结构模板与「……」占位，"
+                        + "不编造具体项目、公司或数字。dimensions 固定 4 项：STRUCTURE 结构与逻辑、"
+                        + "CONTENT 内容充实度、EXPRESSION 表达清晰度、MATCH 岗位匹配度。",
+                SCHEMA_COACH_FB, input);
+
+        if (data.get("score") == null) {
+            throw new BizException(502, "AI 未返回评分结果，请重试");
+        }
+        int score = clamp(intOf(data.get("score")));
+        data.put("score", score);
+        data.putIfAbsent("level", score >= 85 ? "优秀" : score >= 75 ? "良好" : score >= 60 ? "合格" : "待提升");
+
+        List<Map<String, Object>> dimensions = new ArrayList<>();
+        for (Map<String, Object> item : asObjects(data.get("dimensions"))) {
+            Map<String, Object> row = new LinkedHashMap<>(item);
+            row.put("score", clamp(intOf(row.get("score"))));
+            row.putIfAbsent("name", stringOf(row.get("code")));
+            row.putIfAbsent("comment", "");
+            dimensions.add(row);
+        }
+        data.put("dimensions", dimensions);
+        data.put("strengths", asStrings(data.get("strengths")));
+        data.put("improvements", asStrings(data.get("improvements")));
+        data.putIfAbsent("sampleAnswer", "请按「背景 - 任务 - 行动 - 结果」组织，并替换为你自己的真实经历。");
+        data.putIfAbsent("followUp", "你能把刚才提到的项目再具体讲一层吗？");
+        data.putIfAbsent("disclaimer", "反馈只针对这一次表达，不代表导师评价，也不预测录取结果。");
+        return data;
+    }
+
     /* ---------------- 调用与解析 ---------------- */
 
     private Map<String, Object> complete(String task, String schema, Map<String, Object> input) {
@@ -360,6 +508,29 @@ public class OpenAiCompatibleGateway implements AiGateway {
     }
 
     /* ---------------- 结果规整（防止模型抖动把前端打崩） ---------------- */
+
+    private List<String> asStrings(Object value) {
+        List<String> result = new ArrayList<>();
+        if (value instanceof List<?> list) {
+            for (Object item : list) {
+                if (item != null) {
+                    String text = String.valueOf(item).trim();
+                    if (!text.isEmpty()) {
+                        result.add(text);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    private String stringOf(Object value) {
+        return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private int clamp(int value) {
+        return Math.max(0, Math.min(100, value));
+    }
 
     private List<Map<String, Object>> normalizeQuestions(Object value) {
         List<Map<String, Object>> result = new ArrayList<>();

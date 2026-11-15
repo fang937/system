@@ -1,9 +1,11 @@
 <template>
   <div class="login">
-    <div class="glow glow-a" />
-    <div class="glow glow-b" />
-    <div class="glow glow-c" />
-    <div class="glow glow-d" />
+    <div class="scene" aria-hidden="true">
+      <span class="scene-blob sb-a" />
+      <span class="scene-blob sb-b" />
+      <span class="scene-blob sb-c" />
+      <span class="scene-grid" />
+    </div>
 
     <div class="login-card">
       <section class="brand-panel">
@@ -16,11 +18,20 @@
         </div>
 
         <div class="brand-main">
-          <h1>三个入口，各归其位<br />账号属于哪一端，就从哪一端进</h1>
-          <p>
-            学生填报平行志愿，导师面试打分并锁定名额，实训室负责人统筹本室排期，学院统一控制时间轴与调剂。
-            登录入口与账号身份强绑定：走错入口会被后端直接拒绝。
-          </p>
+          <span class="eyebrow">{{ currentPortal.title }}</span>
+          <h1>{{ currentPortal.title }}登录</h1>
+          <p>{{ currentPortal.desc }}</p>
+        </div>
+
+        <div class="art" aria-hidden="true">
+          <span class="art-ribbon" />
+          <span class="art-book bk-1" />
+          <span class="art-book bk-2" />
+          <span class="art-book bk-3" />
+          <span class="art-orb orb-a" />
+          <span class="art-orb orb-b" />
+          <span class="art-orb orb-c" />
+          <span class="art-card" />
         </div>
 
         <div class="flow">
@@ -51,10 +62,10 @@
 
           <div class="form-head">
             <h2>{{ currentPortal.title }}登录</h2>
-            <p>{{ currentPortal.desc }}</p>
+            <p>{{ currentPortal.hint }}</p>
           </div>
 
-          <el-form :model="form" label-position="top" @submit.prevent>
+          <el-form :model="form" label-position="top" class="login-form" @submit.prevent>
             <el-form-item label="账号">
               <el-input
                 v-model="form.username"
@@ -81,7 +92,7 @@
 
           <div class="demo">
             <div class="demo-head">
-              <span>{{ currentPortal.title }}演示账号</span>
+              <span>演示账号 · 点击填入</span>
               <span class="demo-hint">密码均为 123456</span>
             </div>
             <div class="demo-list">
@@ -127,21 +138,24 @@ const portals = [
     key: 'STUDENT',
     title: '学生端',
     icon: 'Reading',
-    desc: '填报 3 个平行志愿、确认 Offer、查看录取结果',
+    desc: '填报平行志愿、上传简历、确认 Offer、查看录取结果，全程可见自己处在流程的哪一步。',
+    hint: '三个入口，各归其位；账号属于哪一端，就从哪一端进',
     placeholder: '学号'
   },
   {
     key: 'TUTOR',
     title: '导师端',
     icon: 'UserFilled',
-    desc: '面试打分与拟录取；实训室负责人还可排期、室内调剂',
+    desc: '查看报考学生、面试打分与拟录取；实训室负责人还可编排面试、处理室内调剂。',
+    hint: '导师与实训室负责人共用此入口，菜单按权限展开',
     placeholder: '工号'
   },
   {
     key: 'ADMIN',
     title: '管理员端',
     icon: 'OfficeBuilding',
-    desc: '阶段轮次、全局看板、导师与实训室、统筹调剂',
+    desc: '控制阶段与轮次、维护导师与实训室、全局看板与统筹调剂、结果公示与导出。',
+    hint: '时间窗口是唯一权威，所有写操作按阶段放行',
     placeholder: '管理员账号'
   }
 ]
@@ -225,70 +239,83 @@ async function submit() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18px;
-  padding: 32px 20px;
+  gap: 20px;
+  padding: 34px 20px;
   overflow: hidden;
-  background: var(--bg-grouped);
+  background: linear-gradient(165deg, #f2f9f6 0%, #eaf4f1 42%, #f7f2e8 100%);
 }
 
-/* 背景柔光 */
-.glow {
+/* ---------------- 背景场景 ---------------- */
+
+.scene {
   position: absolute;
-  border-radius: 50%;
-  filter: blur(90px);
+  inset: 0;
   pointer-events: none;
 }
 
-.glow-a {
-  width: 560px;
-  height: 560px;
-  top: -180px;
-  right: -120px;
-  background: rgba(0, 122, 255, 0.22);
+.scene-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70px);
 }
 
-.glow-b {
-  width: 480px;
-  height: 480px;
-  bottom: -200px;
-  left: -140px;
-  background: rgba(175, 82, 222, 0.16);
+.sb-a {
+  width: 620px;
+  height: 620px;
+  top: -240px;
+  right: -160px;
+  background: rgba(127, 211, 199, 0.42);
 }
 
-.glow-c {
-  width: 380px;
-  height: 380px;
-  top: 38%;
+.sb-b {
+  width: 520px;
+  height: 520px;
+  bottom: -260px;
   left: -180px;
-  background: rgba(48, 176, 199, 0.16);
+  background: rgba(242, 221, 184, 0.5);
 }
 
-.glow-d {
-  width: 340px;
-  height: 340px;
-  bottom: -140px;
-  right: -100px;
-  background: rgba(255, 149, 0, 0.12);
+.sb-c {
+  width: 420px;
+  height: 420px;
+  top: 34%;
+  left: 46%;
+  background: rgba(174, 228, 218, 0.3);
 }
+
+.scene-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.5;
+  background-image: radial-gradient(rgba(28, 111, 102, 0.09) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: radial-gradient(circle at 50% 46%, #000 0%, transparent 72%);
+  -webkit-mask-image: radial-gradient(circle at 50% 46%, #000 0%, transparent 72%);
+}
+
+/* ---------------- 主卡片 ---------------- */
 
 .login-card {
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 1020px;
+  max-width: 1040px;
   display: grid;
-  grid-template-columns: 1.02fr 1fr;
+  grid-template-columns: 1.04fr 1fr;
   background: var(--surface);
-  border-radius: 32px;
-  box-shadow: var(--shadow-lg), 0 2px 8px rgba(0, 0, 0, 0.04);
+  border-radius: 34px;
+  box-shadow:
+    0 30px 70px -40px rgba(20, 78, 70, 0.45),
+    0 2px 6px rgba(20, 78, 70, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
   overflow: hidden;
-  animation: login-in 0.6s var(--ease-out) both;
+  animation: login-in 0.62s var(--clay-ease) both;
 }
 
 @keyframes login-in {
   from {
     opacity: 0;
-    transform: translateY(14px) scale(0.985);
+    transform: translateY(16px) scale(0.986);
   }
   to {
     opacity: 1;
@@ -296,44 +323,23 @@ async function submit() {
   }
 }
 
-/* ---------------- 品牌区 ---------------- */
+/* ---------------- 左侧品牌 ---------------- */
 
 .brand-panel {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 30px;
-  padding: 46px 46px 42px;
-  color: #fff;
-  background: linear-gradient(158deg, #0a84ff 0%, #0066cc 48%, #3b3fd6 100%);
+  gap: 22px;
+  padding: 42px 44px 38px;
+  background:
+    radial-gradient(120% 90% at 80% 8%, rgba(255, 255, 255, 0.85), transparent 58%),
+    linear-gradient(160deg, #edfaf5 0%, #d9f3eb 48%, #f8f1e3 100%);
   overflow: hidden;
-}
-
-.brand-panel::before {
-  content: '';
-  position: absolute;
-  width: 380px;
-  height: 380px;
-  right: -140px;
-  bottom: -170px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.09);
-}
-
-.brand-panel::after {
-  content: '';
-  position: absolute;
-  width: 220px;
-  height: 220px;
-  right: 40px;
-  top: -110px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.07);
 }
 
 .brand-top {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -343,57 +349,182 @@ async function submit() {
   width: 42px;
   height: 42px;
   flex: none;
-  border-radius: 12px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 18px;
-  font-weight: 700;
-  background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  font-weight: 750;
+  color: #fff;
+  background: linear-gradient(150deg, #63c9bb, #2f9d92 62%, #237b72);
+  box-shadow: 0 12px 22px -12px rgba(47, 157, 146, 1), inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 .brand-name {
   font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink-900);
 }
 
 .brand-sub {
-  margin-top: 3px;
-  font-size: 12px;
-  opacity: 0.74;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--ink-500);
 }
 
 .brand-main {
   position: relative;
-  z-index: 1;
-  margin-top: 4px;
+  z-index: 2;
+  margin-top: 6px;
+}
+
+.eyebrow {
+  display: inline-block;
+  margin-bottom: 10px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--brand-700);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(47, 157, 146, 0.16);
 }
 
 .brand-main h1 {
-  margin: 0 0 16px;
-  font-size: 28px;
-  line-height: 1.45;
-  font-weight: 650;
-  letter-spacing: -0.025em;
+  margin: 0 0 12px;
+  font-size: 32px;
+  line-height: 1.3;
+  font-weight: 780;
+  letter-spacing: -0.035em;
+  color: var(--ink-900);
 }
 
 .brand-main p {
   margin: 0;
-  max-width: 460px;
-  font-size: 13.5px;
-  line-height: 1.9;
-  opacity: 0.82;
+  max-width: 34ch;
+  font-size: 13px;
+  line-height: 1.85;
+  color: var(--ink-600);
 }
+
+/* ---------------- 插画（纯 CSS，无外部图片） ---------------- */
+
+.art {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 156px;
+  margin: 4px -8px 0;
+}
+
+.art-book {
+  position: absolute;
+  left: 50%;
+  border-radius: 11px;
+  transform-origin: center;
+  box-shadow:
+    0 18px 30px -20px rgba(20, 78, 70, 0.8),
+    inset 0 2px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -4px 0 rgba(20, 78, 70, 0.06);
+}
+
+.bk-1 {
+  width: 168px;
+  height: 32px;
+  bottom: 92px;
+  background: linear-gradient(180deg, #fcebcf, #eecb93);
+  transform: translateX(-58%) rotate(-5deg);
+}
+
+.bk-2 {
+  width: 190px;
+  height: 34px;
+  bottom: 60px;
+  background: linear-gradient(180deg, #ffffff, #cdece4);
+  transform: translateX(-46%) rotate(3deg);
+}
+
+.bk-3 {
+  width: 152px;
+  height: 28px;
+  bottom: 34px;
+  background: linear-gradient(180deg, #f8f2e6, #e2d5b9);
+  transform: translateX(-54%) rotate(-2deg);
+}
+
+.art-ribbon {
+  position: absolute;
+  left: -22px;
+  bottom: -30px;
+  width: 286px;
+  height: 186px;
+  border: 9px solid rgba(240, 190, 130, 0.4);
+  border-radius: 50%;
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  transform: rotate(-14deg);
+}
+
+.art-card {
+  position: absolute;
+  right: 6px;
+  top: 4px;
+  width: 62px;
+  height: 62px;
+  border-radius: 18px;
+  background: linear-gradient(150deg, #ffffff, #e2f5ef);
+  box-shadow: 0 16px 26px -18px rgba(20, 78, 70, 0.9), inset 0 1px 0 #fff;
+  transform: rotate(9deg);
+}
+
+.art-card::after {
+  content: '';
+  position: absolute;
+  inset: 18px;
+  border-radius: 8px;
+  background: linear-gradient(150deg, #7fd3c7, #2f9d92);
+  opacity: 0.85;
+}
+
+.art-orb {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #ffffff, #a8e0d5 62%, #6cc6b8);
+  box-shadow: 0 12px 20px -14px rgba(20, 78, 70, 0.9);
+}
+
+.orb-a {
+  width: 22px;
+  height: 22px;
+  left: 8%;
+  top: 22%;
+}
+
+.orb-b {
+  width: 14px;
+  height: 14px;
+  right: 26%;
+  bottom: 16%;
+  background: radial-gradient(circle at 34% 30%, #fff, #f3dcb6 60%, #e2bd83);
+}
+
+.orb-c {
+  width: 10px;
+  height: 10px;
+  right: 44%;
+  top: 6%;
+}
+
+/* ---------------- 流程条 ---------------- */
 
 .flow {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 7px;
   margin-top: auto;
 }
 
@@ -401,34 +532,37 @@ async function submit() {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  border-radius: var(--radius-pill);
-  font-size: 12px;
-  background: rgba(255, 255, 255, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(8px);
+  padding: 5px 11px 5px 5px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-700);
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(6px);
 }
 
 .flow-index {
-  width: 16px;
-  height: 16px;
+  width: 17px;
+  height: 17px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--ios-blue-dark);
-  background: rgba(255, 255, 255, 0.92);
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(150deg, #63c9bb, #2f9d92);
 }
 
-/* ---------------- 表单区 ---------------- */
+/* ---------------- 右侧表单 ---------------- */
 
 .form-panel {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 44px 48px;
+  padding: 44px 46px;
+  background: var(--surface);
 }
 
 .form-card {
@@ -440,11 +574,11 @@ async function submit() {
 .portals {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 2px;
-  padding: 3px;
-  margin-bottom: 26px;
-  background: var(--fill-1);
-  border-radius: 14px;
+  gap: 3px;
+  padding: 4px;
+  margin-bottom: 24px;
+  background: var(--surface-sunken);
+  border-radius: 16px;
 }
 
 .portal {
@@ -452,17 +586,17 @@ async function submit() {
   flex-direction: column;
   align-items: center;
   gap: 5px;
-  padding: 9px 4px 8px;
+  padding: 10px 4px 9px;
   border: none;
-  border-radius: 11px;
+  border-radius: 13px;
   background: transparent;
-  color: var(--label-2);
+  color: var(--ink-500);
   font-family: var(--font-ios);
   font-size: 12.5px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.24s var(--ease-ios), color 0.24s var(--ease-ios),
-    box-shadow 0.24s var(--ease-ios), transform 0.18s var(--ease-ios);
+  transition: background-color 0.24s var(--clay-ease), color 0.24s var(--clay-ease),
+    box-shadow 0.24s var(--clay-ease), transform 0.18s var(--clay-ease);
 }
 
 .portal:active {
@@ -471,49 +605,70 @@ async function submit() {
 
 .portal-icon {
   font-size: 17px;
-  opacity: 0.85;
+  opacity: 0.8;
 }
 
 .portal.active {
   background: var(--surface);
-  color: var(--label-1);
-  font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 1px rgba(0, 0, 0, 0.04);
+  color: var(--brand-700);
+  box-shadow: 0 2px 4px rgba(20, 78, 70, 0.06), 0 8px 18px -12px rgba(20, 78, 70, 0.6);
 }
 
 .portal.active .portal-icon {
-  color: var(--ios-blue);
+  color: var(--brand-500);
   opacity: 1;
 }
 
 .form-head h2 {
-  margin: 0 0 6px;
+  margin: 0 0 7px;
   font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.028em;
+  font-weight: 780;
+  letter-spacing: -0.032em;
+  color: var(--ink-900);
 }
 
 .form-head p {
-  margin: 0 0 24px;
+  margin: 0 0 22px;
   font-size: 12.5px;
   line-height: 1.7;
-  color: var(--label-2);
+  color: var(--ink-500);
   min-height: 42px;
+}
+
+.login-form :deep(.el-form-item) {
+  margin-bottom: 18px;
+}
+
+.login-form :deep(.el-form-item__label) {
+  padding-bottom: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-600);
 }
 
 .submit {
   width: 100%;
-  height: 50px;
-  margin-top: 4px;
-  border-radius: 14px;
+  height: 52px;
+  margin-top: 6px;
+  border-radius: 999px;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  background: linear-gradient(120deg, #3cb8a8, #2f9d92 60%, #248a80) !important;
+  border: none !important;
+  box-shadow: 0 16px 30px -18px rgba(47, 157, 146, 1), inset 0 1px 0 rgba(255, 255, 255, 0.28) !important;
 }
 
+.submit:hover {
+  background: linear-gradient(120deg, #4bc4b4, #37a99d 60%, #2b968b) !important;
+}
+
+/* ---------------- 演示账号 ---------------- */
+
 .demo {
-  margin-top: 26px;
+  margin-top: 24px;
   padding-top: 18px;
-  border-top: 1px solid var(--separator);
+  border-top: 1px solid rgba(28, 111, 102, 0.08);
 }
 
 .demo-head {
@@ -521,22 +676,24 @@ async function submit() {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 10px;
-  font-size: 12px;
-  color: var(--label-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-500);
 }
 
 .demo-hint {
-  color: var(--label-3);
+  font-weight: 500;
+  color: var(--ink-400);
 }
 
 .demo-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 4px;
-  border-radius: 14px;
-  background: var(--fill-2);
-  max-height: 268px;
+  padding: 5px;
+  border-radius: 16px;
+  background: var(--surface-sunken);
+  max-height: 248px;
   overflow-y: auto;
 }
 
@@ -547,19 +704,21 @@ async function submit() {
   width: 100%;
   padding: 9px 11px;
   border: none;
-  border-radius: 10px;
+  border-radius: 11px;
   background: var(--surface);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 1px 2px rgba(20, 78, 70, 0.04);
   cursor: pointer;
   font-size: 12px;
   font-family: var(--font-ios);
   text-align: left;
-  color: var(--label-1);
-  transition: background-color 0.18s var(--ease-ios), transform 0.18s var(--ease-ios);
+  color: var(--ink-900);
+  transition: background-color 0.18s var(--clay-ease), transform 0.18s var(--clay-ease),
+    box-shadow 0.18s var(--clay-ease);
 }
 
 .demo-item:hover {
-  background: rgba(0, 122, 255, 0.06);
+  background: var(--brand-50);
+  box-shadow: 0 1px 2px rgba(20, 78, 70, 0.04), 0 8px 16px -14px rgba(47, 157, 146, 1);
 }
 
 .demo-item:active {
@@ -568,62 +727,64 @@ async function submit() {
 
 .demo-role {
   flex: none;
-  color: var(--label-2);
+  color: var(--ink-500);
 }
 
 .demo-account {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--label-1);
+  font-weight: 600;
+  color: var(--brand-700);
 }
 
 .demo-name {
   margin-left: auto;
-  color: var(--label-3);
+  color: var(--ink-400);
 }
 
 .footnote {
   position: relative;
   z-index: 1;
-  max-width: 660px;
-  font-size: 12px;
-  line-height: 1.8;
+  max-width: 680px;
+  font-size: 11.5px;
+  line-height: 1.85;
   text-align: center;
-  color: var(--label-3);
+  color: var(--ink-400);
 }
 
 /* ---------------- 响应式 ---------------- */
 
-@media (max-width: 900px) {
+@media (max-width: 940px) {
   .login {
     padding: 24px 16px;
   }
 
   .login-card {
     grid-template-columns: 1fr;
-    border-radius: 26px;
+    border-radius: 28px;
   }
 
   .brand-panel {
-    gap: 16px;
-    padding: 26px 24px 24px;
+    gap: 14px;
+    padding: 26px 24px 22px;
   }
 
   .brand-main h1 {
-    margin: 0;
-    font-size: 19px;
-    line-height: 1.5;
+    margin-bottom: 6px;
+    font-size: 23px;
   }
 
   .brand-main p {
-    display: none;
+    max-width: none;
+    font-size: 12.5px;
   }
 
+  .art,
   .flow {
     display: none;
   }
 
   .form-panel {
-    padding: 22px 24px 28px;
+    padding: 24px 24px 30px;
   }
 
   .form-card {
@@ -656,11 +817,11 @@ async function submit() {
   }
 
   .brand-panel {
-    padding: calc(26px + env(safe-area-inset-top)) 20px 22px;
+    padding: calc(26px + env(safe-area-inset-top)) 20px 20px;
   }
 
   .brand-main h1 {
-    font-size: 17px;
+    font-size: 20px;
   }
 
   .form-panel {

@@ -41,6 +41,7 @@
         </div>
         <span v-if="tipEngine" class="ai-badge">{{ tipEngine }}</span>
         <div class="spacer" />
+        <el-button size="small" @click="router.push('/student/interview-coach')">进入模拟演练</el-button>
         <el-button size="small" :loading="tipLoading" @click="runTips">
           {{ tips ? '重新分析' : '开始分析' }}
         </el-button>
@@ -192,6 +193,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { api } from '../../api/index.js'
 import { useUserStore } from '../../stores/user.js'
@@ -200,6 +202,7 @@ import { labTone } from '../../utils/tones.js'
 import SelectionTimeline from '../../components/SelectionTimeline.vue'
 
 const store = useUserStore()
+const router = useRouter()
 
 const loading = ref(false)
 const saving = ref(false)

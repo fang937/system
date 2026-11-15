@@ -12,6 +12,7 @@
           <el-option :value="3" label="当前：第 3 轮" />
         </el-select>
         <el-button :icon="Refresh" @click="load">刷新</el-button>
+        <el-button type="danger" plain :loading="resetting" @click="resetAll">重置阶段</el-button>
       </div>
     </div>
 
@@ -75,6 +76,7 @@ import { countdown, fmtTime, phaseStateMap } from '../../utils/labels.js'
 const store = useUserStore()
 const loading = ref(false)
 const saving = ref(false)
+const resetting = ref(false)
 const phases = ref([])
 const round = ref(store.currentRound || 1)
 const dialogVisible = ref(false)
@@ -164,6 +166,44 @@ async function changeRound(value) {
   await load()
 }
 
+/**
+ * 重置整体流程。
+ * 不可撤销：要求输入「重置」二次确认，成功后清空志愿/面试/Offer 等业务数据，
+ * 时间轴回到「宣讲」，学生可重新填报。
+ */
+async function resetAll() {
+  try {
+    await ElMessageBox.prompt(
+      '将清空全部志愿、面试评分、拟录取/Offer、面试排期、调剂记录与系统通知，'
+        + '所有导师名额恢复到总额，时间轴回到「宣讲」阶段、轮次回到第 1 轮。'
+        + '学生账号、档案、简历与私信会保留，重置后可重新填报。此操作不可撤销。',
+      '重置整体流程',
+      {
+        confirmButtonText: '确认重置',
+        cancelButtonText: '取消',
+        type: 'warning',
+        inputPlaceholder: '输入「重置」确认',
+        inputValidator: (value) => value === '重置' || '请输入「重置」两个字'
+      }
+    )
+  } catch {
+    return
+  }
+
+  resetting.value = true
+  try {
+    const result = await api.resetPhases()
+    ElMessage.success(
+      `已重置到「${result?.phase?.name || '宣讲'}」，清空 ${result?.applications ?? 0} 条志愿、`
+        + `${result?.interviewResults ?? 0} 条面试记录`
+    )
+    await store.refreshPhase()
+    await load()
+  } finally {
+    resetting.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -177,6 +217,7 @@ onMounted(load)
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .phase-list {

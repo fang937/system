@@ -53,10 +53,8 @@
         <div class="phase-badge" :class="phaseState">
           <span class="pb-dot" />
           <div class="pb-text">
-            <span class="pb-label">当前阶段</span>
-            <span v-if="store.currentPhase" class="pb-name">
-              第 {{ store.currentRound }} 轮 · {{ store.currentPhase.name }}
-            </span>
+            <span class="pb-label">{{ phaseState === 'active' ? '正在进行' : '流程状态' }}</span>
+            <span v-if="store.currentPhase" class="pb-name">{{ store.currentPhase.name }}</span>
             <span v-else class="pb-name">当前无进行中阶段</span>
           </div>
           <span v-if="store.currentPhase" class="pb-count">{{ countdownText }}</span>
@@ -143,12 +141,22 @@ const MENUS = [
     ]
   },
   {
+    group: 'AI 助手',
+    cap: 'STUDENT',
+    tone: 'indigo',
+    items: [
+      { path: '/student/resume-optimize', label: 'AI 优化简历', icon: 'MagicStick' },
+      { path: '/student/interview-coach', label: 'AI 面试辅导', icon: 'Microphone' }
+    ]
+  },
+  {
     group: '导师事务',
     cap: 'TUTOR_WORK',
     tone: 'indigo',
     items: [
       { path: '/workbench/applicants', label: '报考我的学生', icon: 'UserFilled' },
       { path: '/workbench/offers', label: '我的录取', icon: 'DocumentChecked' },
+      { path: '/workbench/avatar', label: '我的 AI 分身', icon: 'MagicStick' },
       { path: '/messages', label: '学生留言', icon: 'ChatDotRound' }
     ]
   },
@@ -840,6 +848,339 @@ onBeforeUnmount(() => {
 @media (max-width: 400px) {
   .phase-pill {
     max-width: 46vw;
+  }
+}
+
+/* ============================================================================
+   薄荷黏土主题覆盖
+   —— 放在本块最后，同权重下覆盖上方基础样式；不改动结构与交互
+   ============================================================================ */
+
+.app {
+  background: transparent;
+}
+
+/* 画布渐变交给 body 统一铺，避免两层叠出脏色 */
+.app::before {
+  display: none;
+}
+
+/* ---------------- 侧边栏 ---------------- */
+
+.sidebar {
+  width: 252px;
+  padding: 20px 14px 14px;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: saturate(150%) blur(26px);
+  -webkit-backdrop-filter: saturate(150%) blur(26px);
+  border-right: 1px solid rgba(28, 111, 102, 0.08);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.9);
+}
+
+.brand {
+  padding: 2px 8px 18px;
+}
+
+.brand-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  font-size: 17px;
+  background: linear-gradient(150deg, #63c9bb, #2f9d92 62%, #237b72);
+  box-shadow: 0 10px 20px -10px rgba(47, 157, 146, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.brand-name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--ink-900);
+}
+
+.brand-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--ink-400);
+}
+
+.nav {
+  padding: 0 2px;
+}
+
+.nav-title {
+  padding: 16px 12px 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--ink-400);
+}
+
+.nav-title::before {
+  width: 5px;
+  height: 5px;
+  opacity: 1;
+  background: var(--tone, var(--brand-400));
+}
+
+.nav-item {
+  height: 44px;
+  gap: 11px;
+  padding: 0 12px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-600);
+}
+
+.nav-item + .nav-item {
+  margin-top: 3px;
+}
+
+.nav-item:hover {
+  background: rgba(47, 157, 146, 0.06);
+  color: var(--ink-900);
+}
+
+.nav-item.active {
+  background: linear-gradient(135deg, #e9f9f4 0%, #d3f0e8 100%);
+  color: var(--brand-700);
+  font-weight: 650;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 8px 18px -14px rgba(28, 111, 102, 0.9);
+}
+
+.nav-item.active .nav-icon {
+  color: var(--tone, var(--brand-600));
+}
+
+.nav-icon {
+  font-size: 17px;
+  opacity: 1;
+}
+
+/* ---------------- 侧栏底部账号 ---------------- */
+
+.sidebar-foot {
+  padding-top: 12px;
+  border-top: 1px solid rgba(28, 111, 102, 0.07);
+}
+
+.me {
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 16px;
+  background: rgba(47, 157, 146, 0.055);
+}
+
+.me-avatar {
+  width: 34px;
+  height: 34px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--brand-700);
+  background: linear-gradient(155deg, #ffffff, #d8f1ea);
+  box-shadow: inset 0 1px 0 #fff, 0 4px 10px -6px rgba(28, 111, 102, 0.6);
+}
+
+.me-name {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ink-900);
+}
+
+.me-role {
+  font-size: 11px;
+  color: var(--ink-400);
+}
+
+/* ---------------- 顶栏 ---------------- */
+
+.shell {
+  margin-left: 252px;
+}
+
+.topbar {
+  height: 70px;
+  gap: 12px;
+  padding: 0 28px;
+  background: rgba(247, 251, 249, 0.66);
+  backdrop-filter: saturate(160%) blur(20px);
+  -webkit-backdrop-filter: saturate(160%) blur(20px);
+  border-bottom: 1px solid rgba(28, 111, 102, 0.06);
+}
+
+.icon-btn {
+  color: var(--ink-500);
+}
+
+.icon-btn:hover {
+  background: rgba(47, 157, 146, 0.08);
+  color: var(--brand-700);
+}
+
+/* 当前阶段：胶囊徽章，进行中为薄荷实底 */
+.phase-badge {
+  gap: 10px;
+  height: 40px;
+  padding: 0 15px 0 13px;
+  border-radius: 999px;
+  background: var(--cream-100);
+  color: var(--ink-600);
+  border: 1px solid rgba(217, 164, 95, 0.22);
+  max-width: 48vw;
+}
+
+.phase-badge .pb-dot {
+  width: 7px;
+  height: 7px;
+}
+
+.phase-badge .pb-text {
+  gap: 0;
+  line-height: 1.15;
+}
+
+.phase-badge .pb-label {
+  display: block;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  opacity: 0.62;
+}
+
+.phase-badge .pb-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.phase-badge .pb-count {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(28, 111, 102, 0.07);
+}
+
+.phase-badge.active {
+  background: linear-gradient(120deg, #3cb8a8 0%, #2f9d92 55%, #248a80 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 10px 24px -14px rgba(47, 157, 146, 1), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.phase-badge.active .pb-label {
+  opacity: 0.78;
+}
+
+.phase-badge.active .pb-count {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.phase-badge.pending {
+  background: var(--cream-100);
+  color: var(--sand-600);
+  border-color: rgba(217, 164, 95, 0.3);
+}
+
+.phase-badge.closed {
+  background: rgba(91, 125, 119, 0.08);
+  color: var(--ink-400);
+  border-color: transparent;
+}
+
+/* ---------------- 用户区 ---------------- */
+
+.user {
+  height: 40px;
+  gap: 8px;
+  padding: 0 12px 0 5px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-800);
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 1px 0 #fff, 0 6px 16px -14px rgba(28, 111, 102, 0.9);
+}
+
+.user:hover {
+  background: #fff;
+}
+
+.user-avatar {
+  width: 30px;
+  height: 30px;
+  font-size: 12px;
+  font-weight: 700;
+  background: linear-gradient(155deg, #63c9bb, #2f9d92);
+  box-shadow: 0 4px 10px -6px rgba(47, 157, 146, 1);
+}
+
+.user-caret {
+  color: var(--ink-400);
+}
+
+/* ---------------- 主区 ---------------- */
+
+.main {
+  padding: 26px 30px 52px;
+}
+
+.main-inner {
+  max-width: 1320px;
+}
+
+/* ---------------- 通知面板 ---------------- */
+
+.notify-head {
+  color: var(--ink-900);
+}
+
+.notify-item {
+  border-top-color: rgba(28, 111, 102, 0.07);
+}
+
+.notify-title {
+  color: var(--ink-900);
+}
+
+.notify-body {
+  color: var(--ink-500);
+}
+
+.notify-item.unread .notify-title::before {
+  background: var(--brand-500);
+}
+
+/* ---------------- 响应式 ---------------- */
+
+@media (max-width: 900px) {
+  .sidebar {
+    width: 280px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: var(--clay-shadow-lg);
+  }
+
+  .shell {
+    margin-left: 0;
+  }
+
+  .topbar {
+    height: calc(60px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 14px 0;
+  }
+
+  .main {
+    padding: 16px 14px calc(40px + env(safe-area-inset-bottom));
+  }
+
+  .phase-badge {
+    max-width: 54vw;
+    height: 36px;
+  }
+
+  .phase-badge .pb-count {
+    display: none;
   }
 }
 </style>

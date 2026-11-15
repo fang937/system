@@ -2,6 +2,7 @@ package com.hbsd.labselect.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.hbsd.labselect.common.BizException;
+import com.hbsd.labselect.common.UserContext;
 import com.hbsd.labselect.dto.PhaseWindowReq;
 import com.hbsd.labselect.dto.TutorSaveReq;
 import com.hbsd.labselect.entity.Lab;
@@ -168,6 +169,50 @@ public class AdminService {
             throw new BizException("轮次只能是 1~3");
         }
         phaseService.setCurrentRound(round);
+    }
+
+    /**
+     * 重置整体流程到初始阶段。
+     *
+     * <p>会清空志愿、面试评分、拟录取/Offer、面试排期、调剂记录、系统通知与面试相关 AI 留痕，
+     * 把所有导师剩余名额恢复到总额，再把时间轴重置为「宣讲」、轮次回到第 1 轮。
+     * 账号、学生档案、简历文件、简历草稿、私信与 AI 分身配置保留，重置后学生可重新填报。</p>
+     *
+     * <p>该方法不可撤销，前端要求管理员输入「重置」二次确认。</p>
+     */
+    @Transactional
+    public Map<String, Object> resetAll() {
+        int aiReviews = jdbc.update("DELETE FROM ai_reviews WHERE application_id IS NOT NULL");
+        int interviewScores = jdbc.update("DELETE FROM interview_scores");
+        int interviewResults = jdbc.update("DELETE FROM interview_results");
+        int schedules = jdbc.update("DELETE FROM interview_schedules");
+        int adjustRecords = jdbc.update("DELETE FROM adjust_records");
+        int applications = jdbc.update("DELETE FROM applications");
+        int notifications = jdbc.update("DELETE FROM notifications");
+        int tutors = jdbc.update("UPDATE tutors SET remaining_quota = quota");
+
+        phaseService.resetTimeline();
+
+        Long adminId = UserContext.get().id();
+        jdbc.update("""
+                INSERT INTO operation_logs (user_id, role, action, target_type, detail)
+                VALUES (?, 'SYS_ADMIN', 'RESET_PHASES', 'SYSTEM', ?)
+                """, adminId, "重置到初始阶段：清空 " + applications + " 条志愿、"
+                + interviewResults + " 条面试记录、" + notifications + " 条通知");
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("applications", applications);
+        result.put("interviewResults", interviewResults);
+        result.put("interviewScores", interviewScores);
+        result.put("schedules", schedules);
+        result.put("adjustRecords", adjustRecords);
+        result.put("notifications", notifications);
+        result.put("aiReviews", aiReviews);
+        result.put("tutors", tutors);
+        result.put("round", 1);
+        result.put("phase", phaseService.phaseMap(phaseService.active().orElse(null)));
+        result.put("message", "已重置到初始阶段「宣讲」，志愿、面试、Offer 与调剂数据已清空");
+        return result;
     }
 
     private void refreshStatuses() {

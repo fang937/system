@@ -4,6 +4,9 @@ import com.hbsd.labselect.ai.AiService;
 import com.hbsd.labselect.common.R;
 import com.hbsd.labselect.common.RequireRole;
 import com.hbsd.labselect.dto.AiChatReq;
+import com.hbsd.labselect.dto.InterviewCoachFeedbackReq;
+import com.hbsd.labselect.dto.InterviewCoachQuestionReq;
+import com.hbsd.labselect.dto.ResumeOptimizeReq;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -62,6 +65,36 @@ public class AiController {
         return R.ok(aiService.chat(tutorId, req.question(), req.history()));
     }
 
+    /* ---- 学生端：AI 优化简历 / AI 面试辅导 ---- */
+
+    /** 学生端：逐栏优化简历（正文取自已保存的结构化草稿） */
+    @PostMapping("/resume-optimize")
+    @RequireRole("STUDENT")
+    public R<Map<String, Object>> resumeOptimize(@Valid @RequestBody(required = false) ResumeOptimizeReq req) {
+        return R.ok(aiService.resumeOptimize(req));
+    }
+
+    /** 学生端：面试辅导出题（自我介绍 / 常见问题 / 岗位方向相关） */
+    @PostMapping("/interview-coach/question")
+    @RequireRole("STUDENT")
+    public R<Map<String, Object>> coachQuestion(@Valid @RequestBody InterviewCoachQuestionReq req) {
+        return R.ok(aiService.interviewCoachQuestion(req));
+    }
+
+    /** 学生端：提交作答，获取评分维度、亮点、改进与参考表达 */
+    @PostMapping("/interview-coach/feedback")
+    @RequireRole("STUDENT")
+    public R<Map<String, Object>> coachFeedback(@Valid @RequestBody InterviewCoachFeedbackReq req) {
+        return R.ok(aiService.interviewCoachFeedback(req));
+    }
+
+    /** 学生端：最近练习记录（仅本人） */
+    @GetMapping("/interview-coach/history")
+    @RequireRole("STUDENT")
+    public R<List<Map<String, Object>>> coachHistory() {
+        return R.ok(aiService.interviewCoachHistory());
+    }
+
     /** 教师端：简历初评 + 多维评分建议 */
     @PostMapping("/resume-review")
     @RequireRole({"TUTOR", "LAB_ADMIN"})
@@ -71,6 +104,30 @@ public class AiController {
             return R.fail(400, "缺少 applicationId");
         }
         return R.ok(aiService.resumeReview(Long.parseLong(String.valueOf(value))));
+    }
+
+    /* ---- 导师端：管理自己的 AI 分身 ---- */
+
+    /** 导师：查看自己分身的接入状态（通道 / 模型 / 是否走规则引擎）与身份设定 */
+    @GetMapping("/my-avatar")
+    @RequireRole({"TUTOR", "LAB_ADMIN"})
+    public R<Map<String, Object>> myAvatar() {
+        return R.ok(aiService.myAvatar());
+    }
+
+    /** 导师：保存自己的分身设定（语气、问候语、知识库、边界），只作用于本人 */
+    @PutMapping("/my-avatar")
+    @RequireRole({"TUTOR", "LAB_ADMIN"})
+    public R<Void> saveMyAvatar(@RequestBody Map<String, Object> body) {
+        aiService.saveMyPersona(body);
+        return R.ok();
+    }
+
+    /** 导师：用自己的分身试聊一次，走与学生提问完全相同的网关链路 */
+    @PostMapping("/my-avatar/chat")
+    @RequireRole({"TUTOR", "LAB_ADMIN"})
+    public R<Map<String, Object>> chatMyAvatar(@RequestBody Map<String, String> body) {
+        return R.ok(aiService.testMyAvatarChat(body.get("question")));
     }
 
     /** 管理员：查看所有 AI 通道状态（额度、冷却、最近错误） */
@@ -107,6 +164,14 @@ public class AiController {
     @RequireRole("SYS_ADMIN")
     public R<Void> setProviderModel(@PathVariable String name, @RequestBody Map<String, String> body) {
         aiService.selectModel(name, body.get("model"));
+        return R.ok();
+    }
+
+    /** 管理员：写入该通道的 API Key，立即生效并持久化（优先于 .env） */
+    @PutMapping("/providers/{name}/key")
+    @RequireRole("SYS_ADMIN")
+    public R<Void> setProviderKey(@PathVariable String name, @RequestBody Map<String, String> body) {
+        aiService.selectApiKey(name, body.get("apiKey"));
         return R.ok();
     }
 

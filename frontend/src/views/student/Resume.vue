@@ -24,6 +24,24 @@
       </li>
     </ol>
 
+    <!-- AI 优化简历入口：与上传文件互补，草稿可逐栏编辑 -->
+    <section class="ai-card">
+      <div class="ai-head">
+        <div class="ai-mark">AI</div>
+        <div>
+          <div class="ai-title">AI 优化简历</div>
+          <div class="ai-meta">逐栏对照改写 · 一键应用 · 可继续编辑</div>
+        </div>
+        <div class="ai-gap" />
+        <el-button type="primary" size="small" @click="router.push('/student/resume-optimize')">
+          {{ meta.uploaded ? '去优化' : '开始填写' }}
+        </el-button>
+      </div>
+      <p class="ai-desc">
+        覆盖个人信息、教育背景、项目经历、实习经历、技能描述等栏目。优化只调整措辞与结构，不会编造你的经历。
+      </p>
+    </section>
+
     <section class="card card-pad">
       <div class="section-title">
         <h3>{{ meta.uploaded ? '当前简历' : '上传简历' }}</h3>
@@ -135,10 +153,13 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '../../api/index.js'
 import { fmtTime } from '../../utils/labels.js'
 import { formatSize, saveBlob } from '../../utils/download.js'
+
+const router = useRouter()
 
 const maxMb = 10
 const steps = [
@@ -268,6 +289,10 @@ onMounted(load)
 </script>
 
 <style scoped>
+.ai-gap {
+  flex: 1;
+}
+
 /* 简历技能标签 */
 .tag-block {
   margin-top: 16px;

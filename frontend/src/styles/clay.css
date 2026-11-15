@@ -1,0 +1,658 @@
+/* ============================================================================
+   薄荷黏土皮肤层 · Mint Clay Skin
+   ----------------------------------------------------------------------------
+   设计语言取自参考稿：薄荷绿主色 + 奶油色辅助 + 大圆角卡片 + 极柔投影，
+   配一层顶部内高光模拟 3D 黏土的受光面。
+
+   实现策略：本层只做「令牌重映射 + 组件外观覆盖」，不新增 DOM、不改行为。
+   既有页面大量使用 var(--ios-blue) / var(--bg-grouped) 等旧令牌，
+   在此把它们指向新品牌色，即可全站换肤，无需逐页改造。
+   ============================================================================ */
+
+:root {
+  /* ---- 品牌薄荷 ---- */
+  --brand-700: #1c6f66;
+  --brand-600: #217f74;
+  --brand-500: #2f9d92;
+  --brand-400: #4fb9ab;
+  --brand-300: #7fd3c7;
+  --brand-200: #aee4da;
+  --brand-100: #d5f2ec;
+  --brand-50: #ecf9f5;
+
+  /* ---- 奶油与暖金（辅助色，用于强调与「未开始」态） ---- */
+  --cream-300: #f2ddb8;
+  --cream-200: #f8ebd5;
+  --cream-100: #fdf7ec;
+  --sand-500: #d9a45f;
+  --sand-600: #bf8946;
+
+  /* ---- 文字（偏墨绿，避免纯黑发灰） ---- */
+  --ink-900: #14322e;
+  --ink-800: #1c3f3a;
+  --ink-700: #2c4f49;
+  --ink-600: #456b64;
+  --ink-500: #5b7d77;
+  --ink-400: #8aa5a0;
+  --ink-300: #b3c7c3;
+
+  /* ---- 画布 ---- */
+  --canvas: #eef4f1;
+  --canvas-soft: #f7fbf9;
+  --canvas-deep: #e3eeea;
+
+  /* ---- 材质 ---- */
+  --surface: #ffffff;
+  --surface-2: #fbfdfc;
+  --surface-sunken: #f3f8f6;
+  --hairline: rgba(28, 111, 102, 0.1);
+  --hairline-strong: rgba(28, 111, 102, 0.18);
+
+  /* ---- 圆角（参考稿为大圆角） ---- */
+  --clay-radius-xs: 10px;
+  --clay-radius-sm: 14px;
+  --clay-radius-md: 18px;
+  --clay-radius-lg: 24px;
+  --clay-radius-xl: 32px;
+
+  /* ---- 投影：远、淡、偏绿，模拟柔光下的黏土块 ---- */
+  --clay-shadow-sm: 0 2px 6px rgba(20, 78, 70, 0.04), 0 8px 20px -12px rgba(20, 78, 70, 0.16);
+  --clay-shadow-md: 0 4px 10px rgba(20, 78, 70, 0.05), 0 18px 38px -20px rgba(20, 78, 70, 0.24);
+  --clay-shadow-lg: 0 8px 18px rgba(20, 78, 70, 0.06), 0 32px 64px -32px rgba(20, 78, 70, 0.3);
+  --clay-inset: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+
+  /* ---- 动效 ---- */
+  --clay-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* ==========================================================================
+     兼容层：把旧 iOS 令牌指向新品牌色
+     —— 既有 1145 行 index.css 与 30+ 页面因此自动换肤
+     ========================================================================== */
+  --ios-blue: var(--brand-500);
+  --ios-blue-hover: var(--brand-400);
+  --ios-blue-dark: var(--brand-600);
+  --ios-teal: var(--brand-400);
+  --ios-indigo: #5a8fbf;
+  --ios-purple: #8a7fc4;
+
+  --bg-grouped: var(--canvas);
+  --surface-2-legacy: var(--surface-2);
+
+  --label-1: var(--ink-900);
+  --label-2: var(--ink-500);
+  --label-3: var(--ink-400);
+
+  --separator: var(--hairline);
+  --separator-strong: var(--hairline-strong);
+  --fill-1: rgba(47, 157, 146, 0.08);
+  --fill-2: rgba(47, 157, 146, 0.055);
+  --fill-3: rgba(47, 157, 146, 0.14);
+
+  --line: var(--hairline);
+  --ink-1: var(--ink-900);
+  --ink-2: var(--ink-700);
+  --ink-3: var(--ink-500);
+  --ink-4: var(--ink-400);
+
+  --radius-xs: var(--clay-radius-xs);
+  --radius-sm: var(--clay-radius-sm);
+  --radius-md: var(--clay-radius-md);
+  --radius-lg: var(--clay-radius-lg);
+  --radius-xl: var(--clay-radius-xl);
+
+  --shadow-xs: var(--clay-shadow-sm);
+  --shadow-sm: var(--clay-shadow-sm);
+  --shadow-md: var(--clay-shadow-md);
+  --shadow-lg: var(--clay-shadow-lg);
+
+  /* ---- Element Plus 主题 ---- */
+  --el-color-primary: var(--brand-500);
+  --el-color-primary-light-3: #6dbab3;
+  --el-color-primary-light-5: #97cec9;
+  --el-color-primary-light-7: #c1e2de;
+  --el-color-primary-light-8: #d5ebe9;
+  --el-color-primary-light-9: #eaf5f4;
+  --el-color-primary-dark-2: #267e75;
+
+  --el-text-color-primary: var(--ink-900);
+  --el-text-color-regular: var(--ink-700);
+  --el-text-color-secondary: var(--ink-500);
+  --el-text-color-placeholder: var(--ink-400);
+  --el-border-color: var(--hairline);
+  --el-border-color-light: var(--hairline);
+  --el-border-color-lighter: rgba(28, 111, 102, 0.07);
+  --el-border-color-extra-light: rgba(28, 111, 102, 0.05);
+  --el-fill-color: var(--fill-1);
+  --el-fill-color-light: var(--fill-2);
+  --el-fill-color-lighter: rgba(47, 157, 146, 0.035);
+  --el-bg-color-page: var(--canvas);
+  --el-border-radius-base: 12px;
+  --el-border-radius-small: 10px;
+}
+
+/* ============================================================================
+   画布
+   ============================================================================ */
+
+body {
+  background-color: var(--canvas);
+  /* 底色只做很淡的环境色，重色留给卡片本身，避免卡片糊在背景里 */
+  background-image:
+    radial-gradient(900px 520px at 88% -14%, rgba(127, 211, 199, 0.2), transparent 62%),
+    radial-gradient(720px 480px at 2% 0%, rgba(248, 235, 213, 0.34), transparent 64%),
+    radial-gradient(760px 520px at 50% 108%, rgba(174, 228, 218, 0.16), transparent 66%);
+  background-attachment: fixed;
+  color: var(--ink-900);
+}
+
+::selection {
+  background: rgba(47, 157, 146, 0.2);
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand-400);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(28, 111, 102, 0.18);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(28, 111, 102, 0.3);
+  background-clip: content-box;
+}
+
+/* ============================================================================
+   页面骨架与卡片
+   ============================================================================ */
+
+.page-head h2 {
+  font-size: 27px;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  color: var(--ink-900);
+}
+
+.page-head p {
+  color: var(--ink-500);
+}
+
+.card,
+.el-card {
+  border-radius: var(--clay-radius-lg);
+  background: var(--surface);
+  box-shadow: var(--clay-shadow-sm), var(--clay-inset);
+}
+
+.el-card {
+  border: 1px solid rgba(255, 255, 255, 0.9);
+}
+
+.el-card.is-never-shadow {
+  box-shadow: var(--clay-shadow-sm), var(--clay-inset);
+  border-color: rgba(28, 111, 102, 0.06);
+}
+
+.section-title h3 {
+  font-size: 16.5px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--ink-900);
+}
+
+.tiny {
+  color: var(--ink-400);
+}
+
+/* ---- 统计卡：参考稿的大数字 + 图标色块 ---- */
+
+.stat {
+  border-radius: var(--clay-radius-lg);
+  padding: 20px 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.62)),
+    var(--surface);
+  box-shadow: var(--clay-shadow-sm), var(--clay-inset);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+}
+
+.stat:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--clay-shadow-md), var(--clay-inset);
+}
+
+.stat .label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-500);
+}
+
+.stat .value {
+  font-size: 34px;
+  font-weight: 780;
+  letter-spacing: -0.04em;
+  color: var(--ink-900);
+  line-height: 1.05;
+}
+
+.stat .hint {
+  color: var(--ink-400);
+}
+
+/* 统计卡的色调变体：用左上角的一抹柔光区分，不抢数字 */
+.stat.tone-blue,
+.stat.tone-green,
+.stat.tone-indigo,
+.stat.tone-orange,
+.stat.tone-teal {
+  position: relative;
+  overflow: hidden;
+}
+
+.stat.tone-blue::after,
+.stat.tone-teal::after,
+.stat.tone-green::after,
+.stat.tone-indigo::after,
+.stat.tone-orange::after {
+  content: '';
+  position: absolute;
+  right: -46px;
+  top: -54px;
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.stat.tone-blue::after {
+  background: radial-gradient(circle, rgba(127, 211, 199, 0.55), transparent 68%);
+}
+
+.stat.tone-teal::after {
+  background: radial-gradient(circle, rgba(47, 157, 146, 0.34), transparent 68%);
+}
+
+.stat.tone-green::after {
+  background: radial-gradient(circle, rgba(168, 224, 200, 0.62), transparent 68%);
+}
+
+.stat.tone-indigo::after {
+  background: radial-gradient(circle, rgba(168, 200, 228, 0.55), transparent 68%);
+}
+
+.stat.tone-orange::after {
+  background: radial-gradient(circle, rgba(242, 221, 184, 0.75), transparent 68%);
+}
+
+.stat.tone-blue .label .el-icon,
+.stat.tone-teal .label .el-icon {
+  color: var(--brand-600);
+}
+
+.stat.tone-green .label .el-icon {
+  color: #3f9c74;
+}
+
+.stat.tone-indigo .label .el-icon {
+  color: #4d7fae;
+}
+
+.stat.tone-orange .label .el-icon {
+  color: var(--sand-600);
+}
+
+/* ---- 色相变体：把 iOS 系统色换成与薄荷协调的低饱和色 ---- */
+
+.tone-blue {
+  --tone: var(--brand-500);
+  --tone-soft: rgba(47, 157, 146, 0.1);
+  --tone-deep: var(--brand-700);
+}
+
+.tone-teal {
+  --tone: #3f9fbd;
+  --tone-soft: rgba(63, 159, 189, 0.11);
+  --tone-deep: #2c7891;
+}
+
+.tone-indigo {
+  --tone: #5a8fbf;
+  --tone-soft: rgba(90, 143, 191, 0.11);
+  --tone-deep: #3f6c96;
+}
+
+.tone-purple {
+  --tone: #8a7fc4;
+  --tone-soft: rgba(138, 127, 196, 0.12);
+  --tone-deep: #6a5fa5;
+}
+
+.tone-green {
+  --tone: #3f9c74;
+  --tone-soft: rgba(63, 156, 116, 0.12);
+  --tone-deep: #2f7d5c;
+}
+
+.tone-orange {
+  --tone: var(--sand-500);
+  --tone-soft: rgba(217, 164, 95, 0.14);
+  --tone-deep: var(--sand-600);
+}
+
+/* ---- 标签 ---- */
+
+.chip {
+  background: var(--brand-50);
+  color: var(--brand-700);
+  border-radius: 999px;
+  font-weight: 500;
+}
+
+/* ---- 空状态 ---- */
+
+.empty {
+  color: var(--ink-400);
+}
+
+/* ============================================================================
+   Element Plus 外观
+   ============================================================================ */
+
+/* ---- 按钮：胶囊化 + 薄荷主色 ---- */
+
+.el-button {
+  border-radius: 999px;
+  font-weight: 600;
+  box-shadow: none;
+  border-color: var(--hairline);
+}
+
+.el-button--primary {
+  --el-button-bg-color: var(--brand-500);
+  --el-button-border-color: var(--brand-500);
+  --el-button-hover-bg-color: var(--brand-400);
+  --el-button-hover-border-color: var(--brand-400);
+  --el-button-active-bg-color: var(--brand-600);
+  --el-button-active-border-color: var(--brand-600);
+  background-color: var(--brand-500);
+  border-color: var(--brand-500);
+  color: #fff;
+  box-shadow: 0 6px 16px -8px rgba(47, 157, 146, 0.7), var(--clay-inset);
+}
+
+.el-button--primary:hover,
+.el-button--primary:focus {
+  background-color: var(--brand-400);
+  border-color: var(--brand-400);
+  color: #fff;
+}
+
+.el-button--primary.is-plain {
+  background: var(--brand-50);
+  border-color: var(--brand-200);
+  color: var(--brand-700);
+  box-shadow: none;
+}
+
+.el-button--primary.is-plain:hover {
+  background: var(--brand-100);
+  border-color: var(--brand-300);
+  color: var(--brand-700);
+}
+
+.el-button--primary.is-text,
+.el-button--primary.is-link {
+  background: transparent;
+  border-color: transparent;
+  color: var(--brand-600);
+  box-shadow: none;
+}
+
+.el-button--small {
+  border-radius: 999px;
+}
+
+.el-button--large {
+  border-radius: 999px;
+}
+
+/* ---- 输入与选择 ---- */
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  border-radius: 12px;
+  background-color: var(--surface-sunken);
+  box-shadow: none !important;
+  border: 1px solid transparent;
+  transition: background-color 0.2s var(--clay-ease), border-color 0.2s var(--clay-ease);
+}
+
+.el-input__wrapper:hover,
+.el-textarea__inner:hover,
+.el-select__wrapper:hover {
+  background-color: #eef6f3;
+}
+
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-select__wrapper.is-focused {
+  background-color: var(--surface);
+  border-color: var(--brand-300);
+}
+
+.el-input--large .el-input__wrapper {
+  height: 48px;
+  border-radius: 14px;
+  padding: 0 16px;
+}
+
+/* ---- 表格 ---- */
+
+.el-table {
+  --el-table-border-color: rgba(28, 111, 102, 0.07);
+  --el-table-header-text-color: var(--ink-500);
+  --el-table-row-hover-bg-color: var(--brand-50);
+  font-size: 13.5px;
+}
+
+.el-table th.el-table__cell {
+  font-weight: 600;
+  font-size: 12.5px;
+  letter-spacing: 0.01em;
+  background: transparent;
+}
+
+.el-table td.el-table__cell {
+  border-bottom-color: rgba(28, 111, 102, 0.06);
+}
+
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: rgba(47, 157, 146, 0.028);
+}
+
+/* ---- 标签 / 徽标 ---- */
+
+.el-tag {
+  border-radius: 999px;
+  font-weight: 500;
+  border-color: transparent;
+  background: var(--brand-50);
+  color: var(--brand-700);
+  /* 窄列里「第 2 志愿」会被拆成两行，统一不换行 */
+  white-space: nowrap;
+}
+
+.el-tag--info {
+  background: rgba(91, 125, 119, 0.1);
+  color: var(--ink-600);
+}
+
+.el-tag--success {
+  background: rgba(63, 156, 116, 0.13);
+  color: #2f7d5c;
+}
+
+.el-tag--warning {
+  background: rgba(217, 164, 95, 0.16);
+  color: var(--sand-600);
+}
+
+.el-tag--danger {
+  background: rgba(210, 106, 97, 0.13);
+  color: #b3524a;
+}
+
+/* ---- 提示条 ---- */
+
+.el-alert {
+  border-radius: var(--clay-radius-md);
+  border: 1px solid transparent;
+  background: var(--cream-100);
+  color: var(--ink-700);
+}
+
+.el-alert--info.is-light {
+  background: var(--cream-100);
+  border-color: rgba(217, 164, 95, 0.22);
+  color: var(--ink-700);
+}
+
+.el-alert__title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* ---- 对话框 / 抽屉 ---- */
+
+.el-dialog {
+  border-radius: var(--clay-radius-xl);
+  box-shadow: var(--clay-shadow-lg);
+  padding: 22px 24px;
+}
+
+.el-dialog__header {
+  padding-bottom: 14px;
+}
+
+.el-dialog__title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--ink-900);
+}
+
+.el-drawer {
+  border-top-left-radius: var(--clay-radius-xl);
+  border-bottom-left-radius: var(--clay-radius-xl);
+}
+
+.el-overlay {
+  background-color: rgba(20, 50, 46, 0.28);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* ---- 分段控件 ---- */
+
+.el-radio-button__inner {
+  border-radius: 999px !important;
+  border: none;
+  background: transparent;
+  box-shadow: none !important;
+  font-weight: 600;
+  color: var(--ink-500);
+  padding: 6px 14px;
+}
+
+.el-radio-button:first-child .el-radio-button__inner,
+.el-radio-button:last-child .el-radio-button__inner {
+  border-radius: 999px !important;
+}
+
+.el-radio-button__original-radio:checked + .el-radio-button__inner {
+  background: var(--brand-500);
+  color: #fff;
+  box-shadow: 0 4px 12px -6px rgba(47, 157, 146, 0.8) !important;
+}
+
+.el-radio-group {
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(47, 157, 146, 0.06);
+}
+
+/* ---- 分页 / 下拉 ---- */
+
+.el-pagination.is-background .el-pager li {
+  border-radius: 10px;
+}
+
+.el-dropdown-menu,
+.el-popper.is-light {
+  border-radius: var(--clay-radius-md);
+  border-color: var(--hairline);
+  box-shadow: var(--clay-shadow-md);
+}
+
+/* ---- 加载态 ---- */
+
+.el-loading-mask {
+  background-color: rgba(247, 251, 249, 0.7);
+  backdrop-filter: blur(2px);
+}
+
+.el-loading-spinner .path {
+  stroke: var(--brand-500);
+}
+
+/* ============================================================================
+   AI 区块：把 indigo→purple 换成薄荷→湖蓝，与主色统一
+   ============================================================================ */
+
+.ai-card {
+  border-radius: var(--clay-radius-lg);
+  background:
+    linear-gradient(180deg, rgba(47, 157, 146, 0.07), rgba(47, 157, 146, 0) 140px),
+    var(--surface);
+  box-shadow: var(--clay-shadow-sm), var(--clay-inset);
+}
+
+.ai-mark {
+  background: linear-gradient(150deg, var(--brand-500), #3f9fbd);
+  box-shadow: 0 4px 12px rgba(47, 157, 146, 0.28);
+}
+
+.ai-badge {
+  background: var(--brand-50);
+  color: var(--brand-700);
+}
+
+.ai-tag {
+  background: var(--brand-50);
+  color: var(--brand-700);
+}
+
+.ai-tag.hit {
+  background: rgba(217, 164, 95, 0.18);
+  color: var(--sand-600);
+}
+
+.ai-item {
+  background: var(--surface-sunken);
+  border-radius: var(--clay-radius-sm);
+}
+
+.ai-alert {
+  border-radius: var(--clay-radius-md);
+}
+
+/* 打字点 */
+.ai-dots i {
+  background: var(--brand-400);
+}

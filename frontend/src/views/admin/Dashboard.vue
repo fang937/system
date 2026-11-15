@@ -6,12 +6,18 @@
         <p>学院视角：名额池、填报与录取进度、各实训室招生情况。</p>
       </div>
       <div class="head-tools">
-        <el-tag v-if="data.phase?.phase" type="success" effect="light" size="large">
-          第 {{ data.phase.round }} 轮 · {{ data.phase.phase.name }}
-        </el-tag>
         <el-button :icon="Refresh" @click="load">刷新</el-button>
       </div>
     </div>
+
+    <el-alert v-if="store.currentPhase" :closable="false" type="info" show-icon>
+      <template #title>
+        当前阶段为：{{ store.currentPhase.name }}
+        <span class="muted" style="margin-left: 8px">
+          {{ fmtTime(store.currentPhase.startAt) }} ~ {{ fmtTime(store.currentPhase.endAt) }}
+        </span>
+      </template>
+    </el-alert>
 
     <div class="stat-grid">
       <div class="stat tone-blue">
@@ -99,6 +105,107 @@
           </div>
         </div>
       </div>
+    </el-card>
+
+    <el-card shadow="never" class="card card-pad">
+      <div class="section-title">
+        <h3>API Key 配置</h3>
+        <span class="muted">写入后立即生效并保存到数据库（优先于 .env）；页面只显示掩码，不回显完整 Key</span>
+      </div>
+      <div class="key-rows">
+        <div v-for="item in keyProviders" :key="'key-' + item.name" class="key-row">
+          <span class="key-label">AI · {{ item.name }}</span>
+          <span class="key-mask mono">{{ item.keyMasked || '未配置' }}</span>
+          <el-input
+            v-model="keyForm[item.name]"
+            type="password"
+            show-password
+            size="small"
+            class="key-input"
+            placeholder="粘贴该通道的 API Key"
+          />
+          <el-button
+            size="small"
+            type="primary"
+            plain
+            :loading="keySaving === item.name"
+            :disabled="!keyForm[item.name]"
+            @click="saveAiKey(item.name)"
+          >
+            保存
+          </el-button>
+        </div>
+
+        <div class="key-row">
+          <span class="key-label">OCR · MinerU Token</span>
+          <span class="key-mask mono">{{ ocrSecret('mineru-token') }}</span>
+          <el-input
+            v-model="ocrKeyForm.mineruToken"
+            type="password"
+            show-password
+            size="small"
+            class="key-input"
+            placeholder="mineru.net 的 API Token（sk- 开头）"
+          />
+          <el-button
+            size="small"
+            type="primary"
+            plain
+            :loading="keySaving === 'mineru-token'"
+            :disabled="!ocrKeyForm.mineruToken"
+            @click="saveOcrSecret('mineru-token', ocrKeyForm.mineruToken)"
+          >
+            保存
+          </el-button>
+        </div>
+
+        <div class="key-row">
+          <span class="key-label">OCR · PP-Structure 地址</span>
+          <span class="key-mask mono">{{ ocrSecret('structure-endpoint') || '未配置' }}</span>
+          <el-input
+            v-model="ocrKeyForm.structureEndpoint"
+            size="small"
+            class="key-input"
+            placeholder="如 https://paddleocr.aistudio-app.com/api/v2/ocr/jobs"
+          />
+          <el-button
+            size="small"
+            type="primary"
+            plain
+            :loading="keySaving === 'structure-endpoint'"
+            :disabled="!ocrKeyForm.structureEndpoint"
+            @click="saveOcrSecret('structure-endpoint', ocrKeyForm.structureEndpoint)"
+          >
+            保存
+          </el-button>
+        </div>
+
+        <div class="key-row">
+          <span class="key-label">OCR · PP-Structure Key</span>
+          <span class="key-mask mono">{{ ocrSecret('structure-api-key') }}</span>
+          <el-input
+            v-model="ocrKeyForm.structureKey"
+            type="password"
+            show-password
+            size="small"
+            class="key-input"
+            placeholder="星河社区的 API Key"
+          />
+          <el-button
+            size="small"
+            type="primary"
+            plain
+            :loading="keySaving === 'structure-api-key'"
+            :disabled="!ocrKeyForm.structureKey"
+            @click="saveOcrSecret('structure-api-key', ocrKeyForm.structureKey)"
+          >
+            保存
+          </el-button>
+        </div>
+      </div>
+      <p class="ocr-note">
+        密钥保存在 <code>system_config</code> 表，重启后仍生效；清空输入框不会删除已保存的 Key，如需停用某个 Key 直接覆盖为新 Key 即可。
+      </p>
     </el-card>
 
     <el-card shadow="never" class="card card-pad">
@@ -199,9 +306,11 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { api } from '../../api/index.js'
+import { useUserStore } from '../../stores/user.js'
 import { fmtTime } from '../../utils/labels.js'
 import { labTone, usageTone } from '../../utils/tones.js'
 
+const store = useUserStore()
 const loading = ref(false)
 const data = ref({})
 const providers = ref([])
@@ -212,7 +321,13 @@ const modelState = reactive({})
 const testState = reactive({})
 const testing = ref('')
 
-const ocr = reactive({ provider: 'auto', available: {}, model: '', saving: false })
+// API Key 配置：输入框内容（保存后清空）与保存中状态
+const keyForm = reactive({})
+const ocrKeyForm = reactive({ mineruToken: '', structureEndpoint: '', structureKey: '' })
+const keySaving = ref('')
+const keyProviders = computed(() => (providers.value || []).filter((p) => p.name !== 'mock'))
+
+const ocr = reactive({ provider: 'auto', available: {}, model: '', secrets: {}, saving: false })
 
 const OCR_LABELS = {
   auto: '自动（MinerU 优先）',
@@ -228,9 +343,14 @@ async function loadOcr() {
     ocr.provider = res?.provider || 'auto'
     ocr.available = res?.available || {}
     ocr.model = res?.model || ''
+    ocr.secrets = res?.secrets || {}
   } catch (error) {
     ElMessage.error(`读取解析引擎配置失败：${error.message}`)
   }
+}
+
+function ocrSecret(target) {
+  return ocr.secrets?.[target] || '未配置'
 }
 
 async function saveOcr(value) {
@@ -322,6 +442,36 @@ async function testProvider(name) {
   }
 }
 
+async function saveAiKey(name) {
+  keySaving.value = name
+  try {
+    await api.aiSetProviderKey(name, keyForm[name])
+    keyForm[name] = ''
+    ElMessage.success(`${name} 的 API Key 已写入并立即生效`)
+    await loadProviders()
+  } catch (error) {
+    ElMessage.error(`写入失败：${error.message}`)
+  } finally {
+    keySaving.value = ''
+  }
+}
+
+async function saveOcrSecret(target, value) {
+  keySaving.value = target
+  try {
+    await api.updateOcrSecret(target, value)
+    if (target === 'mineru-token') ocrKeyForm.mineruToken = ''
+    if (target === 'structure-endpoint') ocrKeyForm.structureEndpoint = ''
+    if (target === 'structure-api-key') ocrKeyForm.structureKey = ''
+    ElMessage.success('已写入并立即生效')
+    await loadOcr()
+  } catch (error) {
+    ElMessage.error(`写入失败：${error.message}`)
+  } finally {
+    keySaving.value = ''
+  }
+}
+
 onMounted(() => {
   load()
   loadProviders()
@@ -330,6 +480,40 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.key-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.key-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.key-label {
+  width: 168px;
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--label-1);
+}
+
+.key-mask {
+  width: 132px;
+  flex: none;
+  font-size: 12px;
+  color: var(--label-3);
+}
+
+.key-input {
+  width: 320px;
+  max-width: 100%;
+  flex: 0 1 320px;
+}
+
 .model-select {
   width: 172px;
   flex: none;

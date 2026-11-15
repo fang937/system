@@ -27,12 +27,15 @@ import java.util.function.Function;
 public class MultiProviderAiGateway implements AiGateway {
 
     private final AiProperties properties;
+    private final ObjectMapper mapper;
+    private final MockAiGateway fallback = new MockAiGateway();
     private final List<Slot> slots = new ArrayList<>();
     private final ThreadLocal<String> lastUsed = new ThreadLocal<>();
     private volatile String activeName;
 
     public MultiProviderAiGateway(AiProperties properties, ObjectMapper mapper) {
         this.properties = properties;
+        this.mapper = mapper;
         for (AiProperties.Provider config : properties.allProviders()) {
             Slot slot = new Slot(config);
             if (config.hasKey()) {
@@ -102,6 +105,21 @@ public class MultiProviderAiGateway implements AiGateway {
     }
 
     @Override
+    public Map<String, Object> resumeOptimize(Map<String, Object> input) {
+        return execute(gateway -> gateway.resumeOptimize(input));
+    }
+
+    @Override
+    public Map<String, Object> interviewCoachQuestion(Map<String, Object> input) {
+        return execute(gateway -> gateway.interviewCoachQuestion(input));
+    }
+
+    @Override
+    public Map<String, Object> interviewCoachFeedback(Map<String, Object> input) {
+        return execute(gateway -> gateway.interviewCoachFeedback(input));
+    }
+
+    @Override
     public List<Map<String, Object>> providers() {
         List<Map<String, Object>> result = new ArrayList<>();
         for (Slot slot : slots) {
@@ -140,6 +158,18 @@ public class MultiProviderAiGateway implements AiGateway {
         log.info("AI 通道已切换为 {}", activeName);
     }
 
+    /** 只预热当前通道：多通道路由下真正承担首包的就是它 */
+    @Override
+    public void warmUp() {
+        Slot slot = slotByName(activeName);
+        if (slot == null || slot.gateway == null) {
+            slot = slots.stream().filter(s -> s.gateway != null).findFirst().orElse(null);
+        }
+        if (slot != null && slot.gateway != null) {
+            slot.gateway.warmUp();
+        }
+    }
+
     /* ---------------- 管理端调试 ---------------- */
 
     @Override
@@ -165,6 +195,24 @@ public class MultiProviderAiGateway implements AiGateway {
         log.info("AI 通道 {} 模型切换为 {}", slot.config.getName(), model.trim());
     }
 
+    @Override
+    public void setApiKey(String name, String apiKey) {
+        Slot slot = slotByName(name);
+        if (slot == null) {
+            throw new BizException("通道不存在：" + name);
+        }
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new BizException("API Key 不能为空");
+        }
+        slot.config.setApiKey(apiKey.trim());
+        // Key 变更后重建网关实例（新 Key 立即生效，未配置过的通道也能被激活）
+        slot.gateway = new OpenAiCompatibleGateway(properties, slot.config, mapper);
+        slot.quotaExceeded = false;
+        slot.cooldownUntil = null;
+        slot.lastError = null;
+        log.info("AI 通道 {} 的 API Key 已更新（{}）", slot.config.getName(), mask(apiKey));
+    }
+
     private OpenAiCompatibleGateway requireGateway(String name) {
         Slot slot = slotByName(name);
         if (slot == null) {
@@ -182,6 +230,11 @@ public class MultiProviderAiGateway implements AiGateway {
         lastUsed.remove();
         List<String> failures = new ArrayList<>();
         boolean quotaHit = false;
+
+        // 一把 Key 都没有：回落内置规则引擎（与历史行为一致），管理端仍可随时写入 Key 激活真实通道
+        if (slots.stream().allMatch(slot -> slot.gateway == null)) {
+            return call.apply(fallback);
+        }
 
         for (Slot slot : orderedSlots()) {
             if (slot.gateway == null) {

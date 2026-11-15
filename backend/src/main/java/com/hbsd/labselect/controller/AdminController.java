@@ -41,7 +41,7 @@ public class AdminController {
 
     /* ---------- 简历解析引擎 ---------- */
 
-    /** 当前引擎与各引擎可用性（不返回任何密钥） */
+    /** 当前引擎与各引擎可用性（密钥仅返回掩码） */
     @GetMapping("/ocr-config")
     public R<Map<String, Object>> ocrConfig() {
         return R.ok(ocrProviderResolver.snapshot());
@@ -54,11 +54,24 @@ public class AdminController {
         return R.ok();
     }
 
+    /** 写入 OCR 密钥/接入点：mineru-token / structure-endpoint / structure-api-key，立即生效并持久化 */
+    @PutMapping("/ocr-secrets")
+    public R<Void> updateOcrSecret(@RequestBody Map<String, String> body) {
+        ocrProviderResolver.updateSecret(body.get("target"), body.get("value"));
+        return R.ok();
+    }
+
     /* ---------- 阶段与轮次 ---------- */
 
     @GetMapping("/phases")
     public R<List<Map<String, Object>>> phases() {
         return R.ok(adminService.phases());
+    }
+
+    /** 重置整体流程：清空志愿/面试/Offer/排期/调剂，恢复名额并回到「宣讲」阶段 */
+    @PostMapping("/phases/reset")
+    public R<Map<String, Object>> resetPhases() {
+        return R.ok(adminService.resetAll());
     }
 
     @PutMapping("/phases/{id}")

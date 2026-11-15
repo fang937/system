@@ -8,6 +8,8 @@ import App from './App.vue'
 import router from './router/index.js'
 import './styles/index.css'
 import './styles/ios.css'
+// 皮肤层必须最后加载：它重映射设计令牌并覆盖 Element Plus 外观
+import './styles/clay.css'
 
 const app = createApp(App)
 app.use(createPinia())

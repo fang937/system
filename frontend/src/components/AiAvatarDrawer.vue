@@ -41,6 +41,7 @@
           </div>
           <div v-if="sending || directLoading" class="bubble assistant">
             <span class="ai-dots"><i /><i /><i /></span>
+            <span v-if="sending && waitSeconds >= 4" class="bubble-wait">已等待 {{ waitSeconds }}s</span>
           </div>
         </div>
 
@@ -78,7 +79,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { api } from '../api/index.js'
 
 const props = defineProps({
@@ -94,6 +95,23 @@ const boundary = ref('不承诺录取结果、不评价其他导师、不透露�
 const placeholder = ref(false)
 const errorMsg = ref('')
 const scroller = ref(null)
+
+/** 等待时长：模型冷启动或排队时给用户一个「它还在动」的信号 */
+const waitSeconds = ref(0)
+let waitTimer = null
+
+function startWaitClock() {
+  waitSeconds.value = 0
+  clearInterval(waitTimer)
+  waitTimer = setInterval(() => {
+    waitSeconds.value += 1
+  }, 1000)
+}
+
+function stopWaitClock() {
+  clearInterval(waitTimer)
+  waitTimer = null
+}
 
 // 当前会话归属的导师：切换导师时据此判断要不要丢弃旧上下文
 const sessionTutorId = ref(null)
@@ -131,6 +149,7 @@ const activeMessages = computed(() =>
 /** 清空当前会话的全部上下文（消息、草稿、错误、代次） */
 function resetConversation() {
   chatSeq += 1
+  stopWaitClock()
   messages.value = []
   directMessages.value = []
   draft.value = ''
@@ -149,6 +168,8 @@ async function ensureConversation() {
     resetConversation()
     sessionTutorId.value = id
   }
+  // 边界声明以管理员为该导师配置的 persona 为准，未配置时用全局默认
+  boundary.value = props.tutor?.boundaries || props.tutor?.boundary || DEFAULT_BOUNDARY
   if (mode.value === 'direct') {
     await loadDirect()
     return
@@ -250,6 +271,7 @@ async function send() {
   draft.value = ''
   sending.value = true
   errorMsg.value = ''
+  startWaitClock()
   await nextTick()
   scrollToEnd()
 
@@ -274,8 +296,11 @@ async function send() {
     errorMsg.value =
       error.code === 429
         ? `AI 额度不足，分身暂不可用：${error.message}`
-        : `分身暂时不可用：${error.message}。可稍后重试或直接联系导师。`
+        : error.timeout
+          ? '分身响应超时。首次唤醒或模型繁忙时偶发，直接再问一次通常就能出来。'
+          : `分身暂时不可用：${error.message}。可稍后重试或直接联系导师。`
   } finally {
+    stopWaitClock()
     if (seq === chatSeq) {
       sending.value = false
       await nextTick()
@@ -306,6 +331,8 @@ async function sendDirect() {
     if (seq === chatSeq) directSending.value = false
   }
 }
+
+onUnmounted(stopWaitClock)
 </script>
 
 <style scoped>
@@ -459,6 +486,14 @@ async function sendDirect() {
   font-size: 11px;
   line-height: 1.5;
   color: var(--label-3);
+}
+
+/* 等待计时：超过 4s 才出现，让用户知道请求还在跑 */
+.bubble-wait {
+  margin-left: 8px;
+  font-size: 11.5px;
+  color: var(--label-3);
+  font-variant-numeric: tabular-nums;
 }
 
 .bubble.student .bubble-cite {

@@ -5,6 +5,9 @@
         <h2>导师与项目方向</h2>
         <p>宣讲与开放日阶段可先了解各实训室导师；进入「意向填报」阶段后可填报最多 3 个平行志愿。</p>
       </div>
+      <el-button v-if="store.isStudent" @click="router.push('/student/interview-coach')">
+        AI 面试辅导
+      </el-button>
       <el-button v-if="store.isStudent" type="primary" @click="router.push('/student/application')">
         去填报志愿
       </el-button>
@@ -12,7 +15,7 @@
 
     <el-alert v-if="store.currentPhase" :closable="false" type="info" show-icon>
       <template #title>
-        当前阶段：第 {{ store.currentRound }} 轮 · {{ store.currentPhase.name }}
+        当前阶段为：{{ store.currentPhase.name }}
         <span class="muted" style="margin-left: 8px">
           {{ fmtTime(store.currentPhase.startAt) }} ~ {{ fmtTime(store.currentPhase.endAt) }}
         </span>
@@ -270,6 +273,8 @@ const aiEngine = ref('')
 const aiError = ref(null)
 const avatarOpen = ref(false)
 const avatarTutor = ref(null)
+/** 导师分身设定（管理员在 /api/ai/personas 维护）：有则用后端文案，无则退回前端默认 */
+const avatarPersonas = ref({})
 
 const labStat = computed(() => {
   if (!labList.value.length) return ''
@@ -342,10 +347,16 @@ async function runRecommend() {
 }
 
 function openAvatar(tutor) {
+  // 分身身份以后端 persona 为准：displayName / greeting / boundaries 都可能被管理员改过，
+  // 前端硬编码会把自定义问候语覆盖掉，导致「后台配了但学生看不到」。
+  const persona = avatarPersonas.value[tutor.tutorId]
   avatarTutor.value = {
     ...tutor,
-    displayName: `${tutor.tutorName}老师的 AI 分身`,
-    greeting: `你好，我是${tutor.tutorName}老师的 AI 分身，可以聊聊${tutor.researchDirection}方向、项目要求与面试准备。`
+    displayName: persona?.displayName || `${tutor.tutorName}老师的 AI 分身`,
+    greeting:
+      persona?.greeting ||
+      `你好，我是${tutor.tutorName}老师的 AI 分身，可以聊聊${tutor.researchDirection}方向、项目要求与面试准备。`,
+    boundaries: persona?.boundaries
   }
   avatarOpen.value = true
 }
@@ -394,7 +405,23 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+  // 分身设定单独拉取：失败只影响问候语文案，不该拖慢导师列表
+  loadAvatarPersonas()
 })
+
+async function loadAvatarPersonas() {
+  if (!store.isStudent) return
+  try {
+    const list = await api.aiAvatars()
+    const map = {}
+    for (const item of list || []) {
+      map[item.tutorId] = item
+    }
+    avatarPersonas.value = map
+  } catch {
+    /* 后端未返回时在 openAvatar 里退回前端默认文案 */
+  }
+}
 </script>
 
 <style scoped>

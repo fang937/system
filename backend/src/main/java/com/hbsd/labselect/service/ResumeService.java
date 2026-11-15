@@ -13,6 +13,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -141,7 +143,45 @@ public class ResumeService {
         jdbc.update("UPDATE student_profiles SET resume_url = ? WHERE user_id = ?", storedName, studentId);
 
         log.info("学生 {} 上传简历：{}（{} 字节）", studentId, original, file.getSize());
+
+        // 上传即后台解析正文，把 OCR 的一次性成本挪到学生这边，
+        // 导师第一次点「AI 初评」时通常已命中 resume_texts 缓存，不再等两分钟。
+        schedulePrewarm(storedName, original);
         return meta(studentId);
+    }
+
+    /** 事务提交后再触发预解析，否则后台线程读不到刚写入的简历行 */
+    private void schedulePrewarm(String storedName, String fileName) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    prewarmResumeText(storedName, fileName);
+                }
+            });
+            return;
+        }
+        prewarmResumeText(storedName, fileName);
+    }
+
+    /** 守护线程里预解析，失败只记日志：真正的解析在导师点评时还会再走一次 */
+    private void prewarmResumeText(String storedName, String fileName) {
+        Thread worker = new Thread(() -> {
+            try {
+                List<Map<String, Object>> rows = jdbc.queryForList(
+                        "SELECT id FROM student_resumes WHERE stored_name = ?", storedName);
+                if (rows.isEmpty()) {
+                    return;
+                }
+                Long resumeId = ((Number) rows.get(0).get("id")).longValue();
+                ResumeTextService.Extract extract = resumeTextService.extract(resumeId, storedName, fileName);
+                log.info("简历正文预解析完成：{}（引擎 {}，{} 字）", storedName, extract.engine(), extract.chars());
+            } catch (Exception e) {
+                log.warn("简历正文预解析失败（不影响上传）：{}", e.getMessage());
+            }
+        }, "resume-prewarm");
+        worker.setDaemon(true);
+        worker.start();
     }
 
     @Transactional

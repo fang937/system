@@ -8,31 +8,72 @@
       <el-button :icon="Refresh" @click="load">刷新</el-button>
     </div>
 
-    <SelectionTimeline
-      :phases="store.phase?.phases || []"
-      :round="store.currentRound"
-      compact
-      class="timeline-block"
-    />
+    <!-- 流程横幅：四个里程碑，状态取真实 phase，不是装饰 -->
+    <section class="hero">
+      <span class="hero-glow hero-glow-a" aria-hidden="true" />
+      <span class="hero-glow hero-glow-b" aria-hidden="true" />
+
+      <header class="hero-head">
+        <div>
+          <div class="hero-eyebrow">
+            第 {{ round }} 轮 · {{ store.currentPhase?.name || '等待开启' }}
+          </div>
+          <h3 class="hero-title">我的招生进度</h3>
+          <p class="hero-sub">
+            <template v-if="store.currentPhase">
+              {{ fmtTime(store.currentPhase.startAt) }} — {{ fmtTime(store.currentPhase.endAt) }}
+            </template>
+            <template v-else>当前没有进行中的阶段，名单仍可查看</template>
+          </p>
+        </div>
+        <span class="hero-state" :class="store.currentPhase?.state === 'ACTIVE' ? 'on' : 'off'">
+          <i />
+          {{ store.currentPhase?.state === 'ACTIVE' ? '进行中' : '未开放' }}
+        </span>
+      </header>
+
+      <ol class="hero-track">
+        <li v-for="(item, index) in milestones" :key="item.code" class="hero-node" :class="item.state.toLowerCase()">
+          <span class="hero-dot">
+            <el-icon v-if="item.state === 'CLOSED'"><Select /></el-icon>
+            <template v-else>{{ index + 1 }}</template>
+          </span>
+          <span class="hero-label">{{ item.label }}</span>
+          <span class="hero-desc">{{ item.hint }}</span>
+        </li>
+      </ol>
+    </section>
 
     <div class="stat-grid">
       <div class="stat tone-blue">
-        <div class="label"><el-icon><Tickets /></el-icon>总名额</div>
+        <div class="stat-top">
+          <span class="stat-icon"><el-icon><Tickets /></el-icon></span>
+          <span class="label">总名额</span>
+        </div>
         <div class="value mono">{{ overview.quota ?? '—' }}</div>
         <div class="hint">当前账号导师名额</div>
       </div>
       <div class="stat tone-green">
-        <div class="label"><el-icon><Lock /></el-icon>剩余名额</div>
+        <div class="stat-top">
+          <span class="stat-icon"><el-icon><Lock /></el-icon></span>
+          <span class="label">剩余名额</span>
+        </div>
         <div class="value mono">{{ overview.remainingQuota ?? '—' }}</div>
         <div class="hint">拟录取将立即占用</div>
       </div>
       <div class="stat tone-indigo">
-        <div class="label"><el-icon><UserFilled /></el-icon>报考人数</div>
+        <div class="stat-top">
+          <span class="stat-icon"><el-icon><UserFilled /></el-icon></span>
+          <span class="label">报考人数</span>
+        </div>
         <div class="value mono">{{ overview.applicantCount ?? 0 }}</div>
         <div class="hint">含 3 个平行志愿命中本人</div>
       </div>
       <div class="stat tone-orange">
-        <div class="label"><el-icon><Clock /></el-icon>待处理</div>
+        <div class="stat-top">
+          <span class="stat-icon"><el-icon><Clock /></el-icon></span>
+          <span class="label">待处理</span>
+        </div>
         <div class="value mono">{{ overview.pendingCount ?? 0 }}</div>
         <div class="hint">尚未打分或处置</div>
       </div>
@@ -80,7 +121,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="志愿" width="80" align="center">
+        <el-table-column label="志愿" width="104" align="center">
           <template #default="{ row }">
             <el-tag size="small" effect="plain">第 {{ row.choiceIndex }} 志愿</el-tag>
           </template>
@@ -140,14 +181,22 @@
 
         <div v-if="reviewLoading" class="ai-loading">
           <span class="ai-dots"><i /><i /><i /></span>
-          正在阅读档案与志愿…
+          <span>正在阅读档案与志愿… 已等待 {{ reviewElapsed }}s</span>
+          <span v-if="reviewElapsed >= 6" class="ai-loading-hint">
+            首次评扫描件简历要先解析正文，耗时较长；解析过的简历会缓存，下次很快
+          </span>
         </div>
 
         <div v-if="reviewError" class="ai-alert">
           <el-icon class="ai-alert-icon"><WarningFilled /></el-icon>
           <div>
-            <div class="ai-alert-title">{{ reviewError.quota ? 'AI 额度不足，暂时无法初评' : 'AI 初评失败' }}</div>
-            <div class="ai-alert-sub">{{ reviewError.message }}</div>
+            <div class="ai-alert-title">
+              {{ reviewError.quota ? 'AI 额度不足，暂时无法初评' : reviewError.timeout ? '等待超时' : 'AI 初评失败' }}
+            </div>
+            <div class="ai-alert-sub">
+              {{ reviewError.message }}
+              <template v-if="reviewError.timeout">。简历解析在后台已可能完成，直接点「生成初评」重试即可。</template>
+            </div>
           </div>
         </div>
 
@@ -272,14 +321,13 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Clock, Lock, Refresh, Tickets, UserFilled } from '@element-plus/icons-vue'
+import { Clock, Lock, Refresh, Select, Tickets, UserFilled } from '@element-plus/icons-vue'
 import { api } from '../../api/index.js'
 import { useUserStore } from '../../stores/user.js'
-import { offerStatusMap } from '../../utils/labels.js'
+import { fmtTime, offerStatusMap } from '../../utils/labels.js'
 import { saveBlob } from '../../utils/download.js'
-import SelectionTimeline from '../../components/SelectionTimeline.vue'
 
 const store = useUserStore()
 const loading = ref(false)
@@ -299,6 +347,24 @@ const reviewLoading = ref(false)
 const reviewEngine = ref('')
 const reviewError = ref(null)
 
+/** 初评是长任务（首次含 OCR），把已等待时长显示出来，避免用户以为卡死 */
+const reviewElapsed = ref(0)
+let reviewTimer = null
+
+function startReviewClock() {
+  reviewElapsed.value = 0
+  const startedAt = Date.now()
+  clearInterval(reviewTimer)
+  reviewTimer = setInterval(() => {
+    reviewElapsed.value = Math.floor((Date.now() - startedAt) / 1000)
+  }, 500)
+}
+
+function stopReviewClock() {
+  clearInterval(reviewTimer)
+  reviewTimer = null
+}
+
 const rubricSummary = computed(() =>
   rubric.value.map((item) => `${item.name} ${item.weight}%`).join(' · ')
 )
@@ -317,6 +383,26 @@ function resetDims() {
 }
 
 const interviewOpen = computed(() => store.currentPhase?.code === 'INTERVIEW' && store.currentPhase?.state === 'ACTIVE')
+
+/** 横幅上的四个里程碑：状态直接取后端 phase，与列表、按钮的放行口径一致 */
+const MILESTONES = [
+  { code: 'APPLY', label: '意向填报', hint: '学生提交 3 个平行志愿' },
+  { code: 'INTERVIEW', label: '面试考核', hint: '打分、拟录取与递补' },
+  { code: 'CONFIRM', label: '拟录取确认', hint: '学生确认唯一去向' },
+  { code: 'PUBLISH', label: '结果公示', hint: '公示后正式入组' }
+]
+
+const milestones = computed(() =>
+  MILESTONES.map((item) => {
+    const list = (store.phase?.phases || []).filter((p) => p.code === item.code)
+    const hit =
+      list.find((p) => p.roundNo === null || p.roundNo === undefined) ||
+      list.find((p) => Number(p.roundNo) === Number(round.value)) ||
+      list[0] ||
+      null
+    return { ...item, state: hit?.state || 'PENDING' }
+  })
+)
 
 function statusOf(value) {
   return offerStatusMap[value ?? 0] || offerStatusMap[0]
@@ -374,6 +460,7 @@ async function runReview() {
   if (!current.value) return
   reviewLoading.value = true
   reviewError.value = null
+  startReviewClock()
   try {
     const res = await api.aiResumeReview(current.value.applicationId)
     review.value = res?.data || null
@@ -384,8 +471,13 @@ async function runReview() {
     }
   } catch (error) {
     review.value = null
-    reviewError.value = { message: error.message, quota: error.code === 429 }
+    reviewError.value = {
+      message: error.message,
+      quota: error.code === 429,
+      timeout: Boolean(error.timeout)
+    }
   } finally {
+    stopReviewClock()
     reviewLoading.value = false
   }
 }
@@ -474,12 +566,298 @@ onMounted(() => {
   load()
   loadRubric()
 })
+
+onUnmounted(stopReviewClock)
 </script>
 
 <style scoped>
-.timeline-block {
-  display: block;
-  margin-bottom: 14px;
+/* ============================================================================
+   流程横幅
+   ============================================================================ */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding: 24px 28px 26px;
+  border-radius: 28px;
+  /* 比页面底色更实一档，才能在薄荷背景上立起来 */
+  background:
+    radial-gradient(120% 110% at 84% -30%, rgba(255, 255, 255, 0.96), transparent 54%),
+    linear-gradient(130deg, #dff7ef 0%, #c6ece1 46%, #f7ecd7 100%);
+  border: 1px solid rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 26px 50px -34px rgba(20, 78, 70, 0.95),
+    0 2px 6px rgba(20, 78, 70, 0.04),
+    inset 0 1px 0 #fff;
+}
+
+.hero-glow {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(38px);
+}
+
+.hero-glow-a {
+  width: 260px;
+  height: 260px;
+  right: -70px;
+  top: -110px;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.hero-glow-b {
+  width: 220px;
+  height: 220px;
+  left: -60px;
+  bottom: -120px;
+  background: rgba(240, 190, 130, 0.28);
+}
+
+.hero-head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hero-eyebrow {
+  display: inline-block;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--brand-700);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(47, 157, 146, 0.14);
+}
+
+.hero-title {
+  margin: 10px 0 4px;
+  font-size: 22px;
+  font-weight: 780;
+  letter-spacing: -0.03em;
+  color: var(--ink-900);
+}
+
+.hero-sub {
+  margin: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-600);
+}
+
+.hero-state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  background: rgba(91, 125, 119, 0.1);
+  color: var(--ink-500);
+}
+
+.hero-state i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.hero-state.on {
+  background: var(--brand-500);
+  color: #fff;
+  box-shadow: 0 10px 20px -12px rgba(47, 157, 146, 1);
+}
+
+.hero-state.on i {
+  background: #fff;
+  animation: hero-pulse 1.9s ease-in-out infinite;
+}
+
+@keyframes hero-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.6);
+  }
+  60% {
+    box-shadow: 0 0 0 5px rgba(255, 255, 255, 0);
+  }
+}
+
+/* ---- 里程碑轨道 ---- */
+
+.hero-track {
+  position: relative;
+  z-index: 1;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 24px 0 0;
+  padding: 0;
+}
+
+.hero-track::before {
+  content: '';
+  position: absolute;
+  top: 23px;
+  left: 12.5%;
+  right: 12.5%;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(47, 157, 146, 0.4), rgba(217, 164, 95, 0.42));
+}
+
+.hero-node {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  text-align: center;
+}
+
+.hero-dot {
+  position: relative;
+  z-index: 1;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-400);
+  background: #fff;
+  border: 2px solid rgba(28, 111, 102, 0.1);
+  box-shadow: 0 8px 18px -14px rgba(20, 78, 70, 0.9), inset 0 1px 0 #fff;
+  transition: transform 0.3s var(--clay-ease);
+}
+
+.hero-node.active .hero-dot {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(150deg, #4fc0b2, #2f9d92 62%, #248a80);
+  box-shadow: 0 0 0 5px rgba(47, 157, 146, 0.14), 0 14px 24px -16px rgba(47, 157, 146, 1);
+  transform: scale(1.06);
+}
+
+.hero-node.closed .hero-dot {
+  color: var(--brand-600);
+  background: #ddf4ec;
+  border-color: rgba(255, 255, 255, 0.9);
+}
+
+.hero-node.pending .hero-dot {
+  border-style: dashed;
+  border-color: rgba(217, 164, 95, 0.45);
+  color: var(--sand-600);
+}
+
+.hero-label {
+  padding: 4px 13px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink-800);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+}
+
+.hero-node.active .hero-label {
+  color: #fff;
+  background: var(--brand-500);
+  box-shadow: 0 8px 16px -12px rgba(47, 157, 146, 1);
+}
+
+.hero-node.pending .hero-label {
+  color: var(--sand-600);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.hero-desc {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink-500);
+  max-width: 20ch;
+  text-wrap: balance;
+}
+
+/* ============================================================================
+   统计卡
+   ============================================================================ */
+
+.stat-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.stat-icon {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  font-size: 15px;
+  background: rgba(47, 157, 146, 0.1);
+  color: var(--brand-700);
+}
+
+.stat.tone-green .stat-icon {
+  background: rgba(63, 156, 116, 0.12);
+  color: #2f7d5c;
+}
+
+.stat.tone-indigo .stat-icon {
+  background: rgba(90, 143, 191, 0.13);
+  color: #3f6c96;
+}
+
+.stat.tone-orange .stat-icon {
+  background: rgba(217, 164, 95, 0.16);
+  color: var(--sand-600);
+}
+
+.stat .value {
+  margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+  .hero {
+    padding: 20px 18px 22px;
+    border-radius: 22px;
+  }
+
+  .hero-title {
+    font-size: 19px;
+  }
+
+  .hero-track {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 6px;
+  }
+
+  .hero-track::before {
+    display: none;
+  }
+
+  .hero-dot {
+    width: 40px;
+    height: 40px;
+    font-size: 13px;
+  }
 }
 
 /* 简历技能标签 */
@@ -573,6 +951,20 @@ onMounted(() => {
 
 .ai-review .ai-head {
   gap: 9px;
+}
+
+/* 长任务提示：等待超过 6s 才出现，避免正常请求也刷提示 */
+.ai-loading {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.ai-loading-hint {
+  flex-basis: 100%;
+  padding-left: 2px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--sand-600);
 }
 
 .rubric-box {

@@ -12,9 +12,10 @@
 --     docker exec -i <mysql容器名> mysql -uroot -p<密码> <库名> < scripts/reset-demo-data.sql
 --
 -- 执行后重启后端，schema.sql 会补上评分标准，DemoDataInitializer 会重建：
---   8 名软件工程学生（2023001~2023008）、6 个实训室、25 位导师、8 个阶段、演示志愿。
+--   8 名软件工程学生（2023001~2023008）、6 个实训室、25 位导师、8 个阶段、演示志愿；
+--   TestScenarioInitializer 会追加 8 名测试对象（2023901~2023908）与典型流程场景。
 --
--- 注意：这是清空操作，学生简历、私信、调剂记录会一并删除。仅用于演示环境。
+-- 注意：这是清空操作，学生简历、结构化简历草稿、面试辅导记录、私信、调剂记录会一并删除。仅用于演示环境。
 -- ============================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
@@ -27,6 +28,7 @@ DELETE FROM notifications;
 DELETE FROM adjust_records;
 DELETE FROM ai_reviews;
 DELETE FROM ai_personas;
+DELETE FROM interview_coach_records;
 
 -- 面试
 DELETE FROM interview_scores;
@@ -37,6 +39,7 @@ DELETE FROM interview_schedules;
 DELETE FROM applications;
 DELETE FROM resume_texts;
 DELETE FROM student_resumes;
+DELETE FROM resume_drafts;
 DELETE FROM student_profiles;
 
 -- 组织与账号

@@ -15,9 +15,9 @@
 
 | 登录入口 | 角色 | 工作台 | 能力 |
 |---|---|---|---|
-| 学生端 | `STUDENT` | 学生端 | 导师与方向、3 个平行志愿、**简历上传**、Offer 确认、录取结果 |
+| 学生端 | `STUDENT` | 学生端 | 导师与方向、3 个平行志愿、**简历上传与 AI 优化**、**AI 面试辅导**、Offer 确认、录取结果 |
 | 导师端 | `TUTOR` / `LAB_ADMIN` | **同一个工作台** | 导师可见「报考我的学生、面试打分、拟录取/递补/淘汰」；实训室管理员额外可见「本室进度、面试排期、室内调剂」 |
-| 管理员端 | `SYS_ADMIN` | 管理端 | 阶段与轮次、导师与实训室、全局看板、统筹调剂、结果导出 |
+| 管理员端 | `SYS_ADMIN` | 管理端 | 阶段与轮次、**重置整体流程**、导师与实训室、全局看板、统筹调剂、结果导出 |
 
 说明：
 - 数据库保留 `STUDENT / TUTOR / LAB_ADMIN / SYS_ADMIN` 四种角色，**实训室负责人（`LAB_ADMIN`）与导师端合并为同一个入口**，菜单按 `caps` 渲染。
@@ -238,6 +238,21 @@ docker compose down -v             # 连数据卷一起删，下次启动重新�
 | `2023001` | 林晓 | — | 学生 | 学生端 | 志愿留空，可现场演示填报 |
 | `2023002` ~ `2023008` | — | — | 学生 | 学生端 | 已预填志愿 |
 
+### 3.1 学生端测试对象（典型流程）
+
+密码统一 `123456`，学号即登录账号。首次启动自动写入；管理员点「重置阶段」后账号保留，志愿/Offer 等业务数据清空，可重新填报。
+
+| 账号 | 姓名 | 预置场景 | 建议演示 |
+|---|---|---|---|
+| `2023901` | 唐子墨 | 未填报任何志愿 | 意向填报阶段的空白起点 |
+| `2023902` | 苏念 | 已填 3 个志愿，服从双调剂 | 导师端面试打分 |
+| `2023903` | 顾辰 | 已面试打分（86），导师未处置 | 导师端拟录取 / 递补 / 淘汰 |
+| `2023904` | 沈雨薇 | 收到 2 个拟录取 Offer，待确认 | 多 Offer 选择与确认 |
+| `2023905` | 陆星野 | 递补第 1 顺位 | 释放名额后自动递补 |
+| `2023906` | 许知远 | 已淘汰且不服从任何调剂 | 调剂池 / 人工兜底 |
+| `2023907` | 韩清和 | 已确认录取 | 录取结果与公示导出 |
+| `2023908` | 叶知秋 | 预置结构化简历草稿 | AI 优化简历 |
+
 ## 4. 八个业务阶段
 
 阶段全部落在 `selection_phases` 表，**时间窗口是唯一权威**：所有写接口第一步校验当前时间是否在窗口内，抓包直接调接口同样会被拒绝。
@@ -253,13 +268,15 @@ docker compose down -v             # 连数据卷一起删，下次启动重新�
 | 7 | 统筹调剂 | 全局 | 室内调剂 → 全院调剂 → 人工兜底 |
 | 8 | 结果公示 | 全局 | 只读 + 导出 |
 
-演示时可在「阶段与轮次」页对任一阶段点 **立即进入**（窗口平移到当前时间、保留时长）或 **立即结束**，用来快速走完 3→4→5→7 全流程。
+演示时可在「阶段与轮次」页对任一阶段点 **立即进入**（窗口平移到当前时间、保留时长）或 **立即结束**，用来快速走完 3→4→5→7 全流程。需要从头再来时点 **重置阶段**：输入「重置」确认后，志愿、面试评分、Offer、排期、调剂记录与系统通知全部清空，导师名额恢复，时间轴回到「宣讲」，测试学生账号保留可重新填报。
 
 ## 5. 关键实现
 
 | 问题 | 做法 |
 |---|---|
 | 时间强控 | `PhaseService.require(...)` 统一校验，异常信息带阶段名与开放时间 |
+| 重置阶段 | 管理端「阶段与轮次 → 重置阶段」：清空志愿/面试/Offer/排期/调剂/通知，恢复导师名额，时间轴回到「宣讲」、轮次回到第 1 轮；需输入「重置」二次确认，不可撤销 |
+| 演示数据不回流 | `demo.seed.completed` / `demo.testdata.version` 两个配置标记：首次写入后，重置或重启都不会把旧志愿/测试场景重新灌回 |
 | 名额防超卖 | `UPDATE tutors SET remaining_quota = remaining_quota - 1 WHERE id = ? AND remaining_quota > 0`，受影响行数必须为 1 |
 | 超时自动递补 | 定时任务每 30 秒扫描到期 `confirm_status=0` 的 Offer：置超时 → 释放名额 → 顺位最小递补转拟录取 → 发通知 |
 | 单 Offer 自动确认 | 确认阶段内，只收到 1 个待确认 Offer 的学生由定时任务自动确认 |
@@ -269,7 +286,7 @@ docker compose down -v             # 连数据卷一起删，下次启动重新�
 | 双选时间轴 | `SelectionTimeline` 组件读 `/api/meta/phase`，管理端完整版（可改时间）、学生端与教师端紧凑版共用同一份阶段数据；顶栏常驻「当前阶段」徽章（进行中为绿色渐变 + 剩余时间） |
 | 简历技能标签 | `ResumeTagService` 按 8 类词表从简历正文抽标签（长词优先、区间不重叠，兼容 `SpringBoot` 无空格写法），学生端「我的简历」与教师端初评共用，不依赖大模型 |
 | 分端登录 | `POST /api/auth/login` 携带 `portal`（`STUDENT` / `TUTOR` / `ADMIN`），与 `users.role` 不匹配返回 403；成功返回 `{token, user:{role, caps, labId, tutorId}, phase}` |
-| AI 能力 | 四类能力走 `AiGateway` 单一接入点，**支持多通道（多把 Key）**：某个通道额度耗尽自动切换下一个，全部耗尽时前端显示红色提示，管理端「全局看板 → AI 通道」可查看状态并手动切换；未配置 Key 时自动回落内置规则引擎（结构一致）。评分标准落在 `score_rubrics`，教师分身身份落在 `ai_personas`。详见 `docs/AI集成说明.md` |
+| AI 能力 | 六类能力走 `AiGateway` 单一接入点，**支持多通道（多把 Key）**：某个通道额度耗尽自动切换下一个，全部耗尽时前端显示红色提示，管理端「全局看板 → AI 通道」可查看状态并手动切换；未配置 Key 时自动回落内置规则引擎（结构一致）。评分标准落在 `score_rubrics`，教师分身身份落在 `ai_personas`。学生端另有 **AI 优化简历**（结构化草稿逐栏对照改写、一键应用、可编辑保存）与 **AI 面试辅导**（自我介绍 / 常见问题 / 岗位方向三环节出题、作答、评分反馈）。详见 `docs/AI集成说明.md` |
 | 简历存储 | 学生上传 PDF/DOC/DOCX（≤10MB），落盘 `backend/uploads/resumes`（已 gitignore），元数据存 `student_resumes`；下载走鉴权接口，导师仅能查看报考自己的学生。AI 初评会先抽 PDF 文本层，扫描件走 **PP-StructureV3** 文档解析（`OCR_STRUCTURE_ENDPOINT`，返回结构化 Markdown），失败再降级普通 OCR；正文缓存在 `resume_texts`，重新上传即失效 |
 
 ## 6. 目录结构
@@ -284,22 +301,22 @@ system/
 │       ├── java/com/hbsd/labselect/
 │       │   ├── common/              R、异常、JWT、鉴权拦截器、@RequireRole
 │       │   ├── config/              Web / Jackson / Password 配置
-│       │   ├── entity/              12 张表对应实体
+│       │   ├── entity/              数据表对应实体
 │       │   ├── mapper/              MyBatis-Plus Mapper（含名额原子扣减 SQL）
 │       │   ├── service/             Phase / Auth / Student / Workbench / Offer / Adjust / Admin / Resume
 │       │   ├── ai/                  AiService、多通道网关、ResumeTagService（简历技能标签）
 │       │   ├── ocr/                 文本层 / PP-StructureV3 / 普通 OCR 兜底
 │       │   ├── controller/          Auth / Meta / Student / Workbench / Admin / Notification / Message / Ai
 │       │   ├── scheduler/           Offer 超时与自动确认
-│       │   └── init/                演示数据初始化
-│       └── resources/schema.sql     建表脚本（12 张表）
+│       │   └── init/                演示数据初始化、学生测试对象与典型场景
+│       └── resources/schema.sql     建表脚本（含简历草稿与面试练习记录）
 ├── frontend/
 │   ├── Dockerfile                   # Node 20 构建 → Nginx 托管
 │   ├── nginx.conf                   # SPA history 回退 + /api 反向代理
 │   └── src/
 │       ├── layout/                  MainLayout（按 caps 渲染菜单 + 当前阶段徽章）
-│       ├── components/              SelectionTimeline（三端时间轴）、AiAvatarDrawer（分身/留言）
-│       ├── views/student/           导师与方向、我的志愿、我的简历、我的 Offer、录取结果
+│       ├── components/              SelectionTimeline（三端时间轴）、AiAvatarDrawer（分身/留言）、CoachFeedback（面试反馈）
+│       ├── views/student/           导师与方向、我的志愿、我的简历、AI 优化简历、AI 面试辅导、我的 Offer、录取结果
 │       ├── views/workbench/         报考我的学生、我的录取、排期、本室进度、室内调剂、私信
 │       ├── views/admin/             全局看板、阶段与轮次、导师与实训室、统筹调剂、公示
 │       ├── api/ router/ stores/ utils/
@@ -321,6 +338,8 @@ POST /api/student/offers/{id}/confirm     确认 Offer
 POST /api/student/offers/{id}/decline     放弃 Offer
 
 GET/POST/DELETE /api/student/resume       简历元数据 / 上传（PDF·DOC·DOCX ≤10MB）/ 删除
+GET/PUT /api/student/resume/draft         结构化简历草稿：读取 / 保存（栏目、目标岗位、关键词、侧重点）
+POST /api/student/resume/draft/import     从已上传简历正文按栏目导入草稿
 GET  /api/student/resume/file             本人下载（鉴权，不暴露静态路径）
 
 GET  /api/workbench/applicants|offers|overview
@@ -332,6 +351,7 @@ GET  /api/workbench/lab/progress|students|pool|vacancies
 POST /api/workbench/lab/adjust                  室内调剂
 
 GET  /api/admin/overview|phases|tutors|labs|students|results
+POST /api/admin/phases/reset                    重置整体流程到「宣讲」，清空志愿/面试/Offer 等
 PUT  /api/admin/phases/{id}                     改时间窗口
 POST /api/admin/phases/{id}/jump|close          立即进入 / 立即结束
 POST /api/admin/rounds/{round}                  切换当前轮次
@@ -341,11 +361,17 @@ GET  /api/admin/results/export                  导出 Excel
 # AI（未配置 Key 时为规则引擎占位，结构一致）
 GET  /api/ai/rubric                             评分标准（维度/权重/锚点）
 POST /api/ai/interview-tips                     学生：面试技巧分析
+POST /api/ai/resume-optimize                    学生：AI 优化简历（逐栏原文/建议对照）
+POST /api/ai/interview-coach/question           学生：AI 面试辅导出题（自我介绍 / 常见问题 / 岗位方向）
+POST /api/ai/interview-coach/feedback           学生：提交作答，返回评分维度与改进建议
+GET  /api/ai/interview-coach/history            学生：最近 10 次练习记录（仅本人）
 GET  /api/ai/recommendations                    学生：实训室推荐
 GET  /api/ai/avatars                            学生：导师分身列表
 POST /api/ai/avatars/{tutorId}/chat             学生：向分身提问
 POST /api/ai/resume-review                      导师：简历初评 + 评分建议
 POST /api/workbench/applicants/{id}/scores      导师：保存多维评分（折算总分）
+GET/PUT /api/ai/my-avatar                       导师：自己分身的接入状态 / 身份设定
+POST /api/ai/my-avatar/chat                     导师：用自己的分身试聊
 GET/PUT /api/ai/personas/{tutorId}              管理员：分身身份设定
 ```
 
