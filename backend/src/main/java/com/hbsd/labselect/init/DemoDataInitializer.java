@@ -99,7 +99,7 @@ public class DemoDataInitializer implements ApplicationRunner {
         if (count != null && count > 0) {
             return;
         }
-        seedUser("admin", "张建国", "SYS_ADMIN", null, null);
+        seedUser("admin", "灭建国", "SYS_ADMIN", null, null);
         log.info("默认管理员已创建：admin / {}", DEMO_PASSWORD);
     }
 
