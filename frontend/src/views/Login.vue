@@ -1,5 +1,31 @@
 <template>
-  <div class="login">
+  <div class="login" :class="{ 'is-immersive': uiHidden }">
+    <div class="bg-video" aria-hidden="true">
+      <video
+        ref="videoA"
+        class="bg-video__el"
+        :class="{ 'is-visible': visibleSlot === 0 }"
+        muted
+        playsinline
+        preload="auto"
+        @ended="onEnded(0)"
+        @playing="onPlaying(0)"
+        @error="onVideoError"
+      />
+      <video
+        ref="videoB"
+        class="bg-video__el"
+        :class="{ 'is-visible': visibleSlot === 1 }"
+        muted
+        playsinline
+        preload="auto"
+        @ended="onEnded(1)"
+        @playing="onPlaying(1)"
+        @error="onVideoError"
+      />
+      <div class="bg-video__veil" />
+    </div>
+
     <div class="scene" aria-hidden="true">
       <span class="scene-blob sb-a" />
       <span class="scene-blob sb-b" />
@@ -7,7 +33,7 @@
       <span class="scene-grid" />
     </div>
 
-    <div class="login-card">
+    <div class="login-card" :inert="uiHidden" :aria-hidden="uiHidden">
       <section class="brand-panel">
         <div class="brand-top">
           <div class="logo">双</div>
@@ -113,15 +139,26 @@
       </section>
     </div>
 
-    <div class="footnote">
+    <div class="footnote" :aria-hidden="uiHidden">
       入口与身份强绑定：学生端仅限学生账号；导师端仅限导师与实训室负责人；管理员端仅限系统管理员。
       实训室负责人身份由管理员在「导师与实训室」中授予。
     </div>
+
+    <button
+      type="button"
+      class="ui-toggle"
+      :title="uiHidden ? '显示登录界面（Esc）' : '隐藏登录界面，只看校园风光'"
+      :aria-label="uiHidden ? '显示登录界面' : '隐藏登录界面'"
+      @click="toggleUi"
+    >
+      <el-icon><component :is="uiHidden ? 'View' : 'Hide'" /></el-icon>
+      <span>{{ uiHidden ? '显示登录' : '隐藏登录' }}</span>
+    </button>
   </div>
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '../stores/user.js'
@@ -130,8 +167,148 @@ const route = useRoute()
 const router = useRouter()
 const store = useUserStore()
 
+/* ---------------- 校园风光背景视频（按顺序循环播放） ---------------- */
+
+const campusVideos = [
+  '/media/login/campus-01-beimen.mp4',
+  '/media/login/campus-02-museum.mp4',
+  '/media/login/campus-03-shiguangta.mp4',
+  '/media/login/campus-04-library.mp4',
+  '/media/login/campus-05-xiyuehu.mp4',
+  '/media/login/campus-06-zhenzhi.mp4'
+]
+
+const videoA = ref(null)
+const videoB = ref(null)
+const visibleSlot = ref(-1)
+const playingIndex = ref(0)
+const reduceMotion =
+  typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    : false
+const mobileQuery =
+  typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(max-width: 560px)')
+    : null
+
+let switchTimer = null
+
+const videoOf = (slot) => (slot === 0 ? videoA.value : videoB.value)
+
+/** 先把下一段静默加载到另一个 video 槽位，切换时无需再等缓冲。 */
+function loadSlot(slot, index) {
+  const el = videoOf(slot)
+  if (!el) return
+  el.src = campusVideos[index]
+  el.load()
+}
+
+async function playSlot(slot, index) {
+  const el = videoOf(slot)
+  if (!el) return
+  const url = campusVideos[index]
+  if (el.getAttribute('src') !== url) {
+    el.src = url
+    el.load()
+  }
+  el.muted = true
+  try {
+    if (el.readyState >= 1) {
+      el.currentTime = 0
+    }
+    await el.play()
+    playingIndex.value = index
+    loadSlot(slot === 0 ? 1 : 0, (index + 1) % campusVideos.length)
+  } catch {
+    // 浏览器自动播放策略拦截时，等用户首次交互再试
+    armResumeOnInteraction()
+  }
+}
+
+function onPlaying(slot) {
+  visibleSlot.value = slot
+}
+
+function onEnded(slot) {
+  if (slot !== visibleSlot.value) return
+  const nextSlot = slot === 0 ? 1 : 0
+  const nextIndex = (playingIndex.value + 1) % campusVideos.length
+  visibleSlot.value = -1
+  clearTimeout(switchTimer)
+  switchTimer = setTimeout(() => playSlot(nextSlot, nextIndex), 560)
+}
+
+function onVideoError() {
+  // 片段加载失败就停在当前海报，不阻塞登录
+  visibleSlot.value = -1
+}
+
+let resumeArmed = false
+function armResumeOnInteraction() {
+  if (resumeArmed) return
+  resumeArmed = true
+  const retry = () => {
+    resumeArmed = false
+    playSlot(visibleSlot.value === 1 ? 1 : 0, playingIndex.value)
+  }
+  window.addEventListener('pointerdown', retry, { once: true })
+}
+
+function onVisibilityChange() {
+  const el = videoOf(visibleSlot.value === 1 ? 1 : 0)
+  if (!el || reduceMotion) return
+  if (document.hidden) {
+    el.pause()
+  } else {
+    el.play().catch(() => {})
+  }
+}
+
+function syncForViewport() {
+  if (mobileQuery?.matches) {
+    videoA.value?.pause()
+    videoB.value?.pause()
+  } else if (!document.hidden && !reduceMotion) {
+    playSlot(visibleSlot.value === 1 ? 1 : 0, playingIndex.value)
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  window.addEventListener('keydown', onKeydown)
+  mobileQuery?.addEventListener('change', syncForViewport)
+  if (reduceMotion || mobileQuery?.matches) return
+  switchTimer = setTimeout(() => playSlot(0, 0), 180)
+})
+
+onBeforeUnmount(() => {
+  clearTimeout(switchTimer)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  window.removeEventListener('keydown', onKeydown)
+  mobileQuery?.removeEventListener('change', syncForViewport)
+  document.body.style.overflow = ''
+  videoA.value?.pause()
+  videoB.value?.pause()
+})
+
 const loading = ref(false)
 const form = reactive({ username: '', password: '' })
+const uiHidden = ref(false)
+
+function toggleUi() {
+  uiHidden.value = !uiHidden.value
+}
+
+// 沉浸模式锁定页面滚动，恢复时还原
+watch(uiHidden, (hidden) => {
+  document.body.style.overflow = hidden ? 'hidden' : ''
+})
+
+function onKeydown(event) {
+  if (event.key === 'Escape' && uiHidden.value) {
+    uiHidden.value = false
+  }
+}
 
 const portals = [
   {
@@ -166,7 +343,11 @@ const currentPortal = computed(() => portals.find((item) => item.key === portal.
 const demoAccounts = {
   STUDENT: [
     { role: '学生（空志愿）', username: '2023001', name: '林晓' },
-    { role: '学生（已填志愿）', username: '2023002', name: '陈子昂' }
+    { role: '学生（已填志愿）', username: '2023002', name: '陈子昂' },
+    { role: '学生（已面试待处置）', username: '2023903', name: '顾辰' },
+    { role: '学生（2 个 Offer）', username: '2023904', name: '沈雨薇' },
+    { role: '学生（3 个 Offer）', username: '2023913', name: '秦书瑶' },
+    { role: '学生（已录取）', username: '2023907', name: '韩清和' }
   ],
   TUTOR: [
     { role: '202 负责人', username: 'liuguanjun', name: '刘冠军' },
@@ -195,7 +376,7 @@ const demoAccounts = {
     { role: '505 讲师', username: 'liutianmeng', name: '刘天萌' },
     { role: '505 讲师', username: 'lina', name: '李娜' }
   ],
-  ADMIN: [{ role: '系统管理员', username: 'admin', name: '张建国' }]
+  ADMIN: [{ role: '系统管理员', username: 'admin', name: '灭建国' }]
 }
 
 const steps = ['宣讲与开放日', '意向填报', '面试与初选', '拟录取确认', '分轮补录', '统筹调剂', '结果公示']
@@ -239,10 +420,66 @@ async function submit() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 20px;
-  padding: 34px 20px;
+  gap: 16px;
+  padding: 28px 20px;
   overflow: hidden;
   background: linear-gradient(165deg, #f2f9f6 0%, #eaf4f1 42%, #f7f2e8 100%);
+}
+
+/* ---------------- 校园风光背景视频 ---------------- */
+
+.bg-video {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  background: #e9f3f0 url('/media/login/campus-poster.jpg') center / cover no-repeat;
+}
+
+.bg-video__el {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.55s var(--clay-ease);
+}
+
+.bg-video__el.is-visible {
+  opacity: 1;
+}
+
+.bg-video__veil {
+  position: absolute;
+  inset: 0;
+  transition: opacity 0.5s var(--clay-ease);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(247, 252, 250, 0.68) 0%,
+      rgba(247, 252, 250, 0.36) 38%,
+      rgba(244, 250, 247, 0.62) 100%
+    ),
+    linear-gradient(115deg, rgba(47, 157, 146, 0.12), rgba(255, 255, 255, 0) 46%, rgba(226, 189, 131, 0.12));
+}
+
+.is-immersive .bg-video__veil {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bg-video__el {
+    display: none;
+  }
+}
+
+/* 手机端整屏都是表单卡片，视频既看不见也白耗流量，直接不显示 */
+@media (max-width: 560px) {
+  .bg-video {
+    display: none;
+  }
 }
 
 /* ---------------- 背景场景 ---------------- */
@@ -297,7 +534,7 @@ async function submit() {
 
 .login-card {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   width: 100%;
   max-width: 1040px;
   display: grid;
@@ -309,7 +546,14 @@ async function submit() {
     0 2px 6px rgba(20, 78, 70, 0.04),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
   overflow: hidden;
-  animation: login-in 0.62s var(--clay-ease) both;
+  animation: login-in 0.62s var(--clay-ease);
+  transition: opacity 0.42s var(--clay-ease), transform 0.42s var(--clay-ease);
+}
+
+.is-immersive .login-card {
+  opacity: 0;
+  transform: translateY(10px) scale(0.985);
+  pointer-events: none;
 }
 
 @keyframes login-in {
@@ -330,7 +574,7 @@ async function submit() {
   display: flex;
   flex-direction: column;
   gap: 22px;
-  padding: 42px 44px 38px;
+  padding: 34px 44px 30px;
   background:
     radial-gradient(120% 90% at 80% 8%, rgba(255, 255, 255, 0.85), transparent 58%),
     linear-gradient(160deg, #edfaf5 0%, #d9f3eb 48%, #f8f1e3 100%);
@@ -415,7 +659,7 @@ async function submit() {
   position: relative;
   z-index: 1;
   flex: 1;
-  min-height: 156px;
+  min-height: 140px;
   margin: 4px -8px 0;
 }
 
@@ -561,7 +805,7 @@ async function submit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 44px 46px;
+  padding: 30px 46px;
   background: var(--surface);
 }
 
@@ -576,7 +820,7 @@ async function submit() {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 3px;
   padding: 4px;
-  margin-bottom: 24px;
+  margin-bottom: 18px;
   background: var(--surface-sunken);
   border-radius: 16px;
 }
@@ -628,7 +872,7 @@ async function submit() {
 }
 
 .form-head p {
-  margin: 0 0 22px;
+  margin: 0 0 16px;
   font-size: 12.5px;
   line-height: 1.7;
   color: var(--ink-500);
@@ -636,7 +880,7 @@ async function submit() {
 }
 
 .login-form :deep(.el-form-item) {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .login-form :deep(.el-form-item__label) {
@@ -666,8 +910,8 @@ async function submit() {
 /* ---------------- 演示账号 ---------------- */
 
 .demo {
-  margin-top: 24px;
-  padding-top: 18px;
+  margin-top: 14px;
+  padding-top: 12px;
   border-top: 1px solid rgba(28, 111, 102, 0.08);
 }
 
@@ -693,7 +937,7 @@ async function submit() {
   padding: 5px;
   border-radius: 16px;
   background: var(--surface-sunken);
-  max-height: 248px;
+  max-height: 224px;
   overflow-y: auto;
 }
 
@@ -702,7 +946,7 @@ async function submit() {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 9px 11px;
+  padding: 7px 10px;
   border: none;
   border-radius: 11px;
   background: var(--surface);
@@ -743,12 +987,74 @@ async function submit() {
 
 .footnote {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   max-width: 680px;
+  padding: 7px 16px;
+  border-radius: 999px;
   font-size: 11.5px;
-  line-height: 1.85;
+  line-height: 1.7;
   text-align: center;
-  color: var(--ink-400);
+  color: var(--ink-500);
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(10px);
+  transition: opacity 0.35s var(--clay-ease);
+}
+
+.is-immersive .footnote {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---------------- 隐藏 / 显示登录界面 ---------------- */
+
+.ui-toggle {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink-700);
+  font-family: var(--font-ios);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  box-shadow:
+    0 10px 24px -16px rgba(20, 78, 70, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  transition: background-color 0.22s var(--clay-ease), transform 0.18s var(--clay-ease),
+    box-shadow 0.22s var(--clay-ease);
+}
+
+.ui-toggle:hover {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.ui-toggle:active {
+  transform: scale(0.97);
+}
+
+.ui-toggle .el-icon {
+  font-size: 15px;
+  color: var(--brand-600);
+}
+
+.is-immersive .ui-toggle {
+  background: rgba(255, 255, 255, 0.84);
+}
+
+/* 中等宽度下卡片几乎占满屏幕，悬浮按钮会压住表单，只在宽屏提供沉浸模式 */
+@media (max-width: 1279px) {
+  .ui-toggle {
+    display: none;
+  }
 }
 
 /* ---------------- 响应式 ---------------- */
