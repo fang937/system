@@ -32,7 +32,20 @@
         </header>
 
         <div ref="scroller" class="bubbles">
-          <div v-for="(message, index) in activeMessages" :key="index" class="bubble" :class="message.mine ? 'student' : 'assistant'">
+          <div
+            v-for="(message, index) in activeMessages"
+            :key="message.id || index"
+            class="bubble"
+            :class="[
+              message.mine ? 'student' : 'assistant',
+              { human: mode === 'ai' && message.senderType === 'TEACHER' }
+            ]"
+          >
+            <div v-if="mode === 'ai' && !message.mine" class="bubble-head">
+              <span class="bubble-role" :class="{ human: message.senderType === 'TEACHER' }">
+                {{ message.senderType === 'TEACHER' ? '真人老师' : 'AI 分身' }}
+              </span>
+            </div>
             <div class="bubble-text">{{ message.content }}</div>
             <div v-if="message.citations && message.citations.length" class="bubble-cite">
               依据：{{ message.citations.join('；') }}
@@ -69,6 +82,9 @@
           </button>
         </footer>
 
+        <p v-if="mode === 'ai'" class="sheet-human-note">
+          标注「真人老师」的消息由导师本人回复，其余为 AI 分身生成。
+        </p>
         <p class="sheet-note">
           {{ mode === 'ai' ? boundary : '这里是你和老师的私聊，消息仅双方可见；老师不在线时留言即可。' }}
           <span v-if="mode === 'ai' && placeholder" class="placeholder-tag">规则引擎预览</span>
@@ -133,13 +149,17 @@ const displayName = computed(() => props.tutor?.displayName || `${props.tutor?.t
 const activeMessages = computed(() =>
   mode.value === 'ai'
     ? messages.value.map((m) => ({
-        mine: m.role === 'student',
+        id: m.id,
+        mine: m.senderType === 'STUDENT',
+        senderType: m.senderType,
         content: m.content,
         citations: m.citations,
-        time: ''
+        time: m.createdAt ? String(m.createdAt).slice(5, 16) : ''
       }))
     : directMessages.value.map((m) => ({
+        id: m.id,
         mine: Number(m.mine) === 1,
+        senderType: Number(m.mine) === 1 ? 'STUDENT' : 'TEACHER',
         content: m.content,
         citations: [],
         time: m.createdAt ? String(m.createdAt).slice(5, 16) : ''
@@ -174,27 +194,64 @@ async function ensureConversation() {
     await loadDirect()
     return
   }
-  if (!messages.value.length) {
-    messages.value = [
-      {
-        role: 'assistant',
-        content:
-          props.tutor?.greeting ||
-          `你好，我是${props.tutor?.tutorName || '导师'}老师的 AI 分身，可以聊聊方向和面试准备。`,
-        citations: []
-      }
-    ]
-  }
+  await loadThread()
   await nextTick()
   scrollToEnd()
+}
+
+/** 拉取与当前导师的完整会话：包含 AI 回答与老师真人回复。 */
+async function loadThread(silent = false) {
+  const tutorId = props.tutor?.tutorId
+  if (!tutorId) return
+  const seq = chatSeq
+  try {
+    const list = await api.aiAvatarMessages(tutorId)
+    if (seq !== chatSeq) return
+    const el = scroller.value
+    const nearBottom = el ? el.scrollHeight - el.scrollTop - el.clientHeight < 80 : true
+    const before = messages.value.length
+    const items = (list || []).map((item) => ({
+      id: item.id,
+      senderType: item.senderType,
+      content: item.content,
+      citations: item.citations || [],
+      createdAt: item.createdAt
+    }))
+    if (items.length) {
+      messages.value = items
+    } else if (!messages.value.length) {
+      messages.value = [
+        {
+          id: 'greeting',
+          senderType: 'AI',
+          content:
+            props.tutor?.greeting ||
+            `你好，我是${props.tutor?.tutorName || '导师'}老师的 AI 分身，可以聊聊方向和面试准备。`,
+          citations: []
+        }
+      ]
+    }
+    // 轮询到新消息时跟随到底部；用户正在回看历史则不打断
+    if (props.modelValue && (nearBottom || messages.value.length > before)) {
+      await nextTick()
+      scrollToEnd()
+    }
+  } catch (error) {
+    if (seq !== chatSeq || silent) return
+    errorMsg.value = `会话加载失败：${error.message}`
+  }
 }
 
 watch(
   () => props.modelValue,
   async (open) => {
     document.body.style.overflow = open ? 'hidden' : ''
-    if (!open) return
+    if (!open) {
+      stopThreadPoll()
+      return
+    }
     await ensureConversation()
+    startThreadPoll()
   }
 )
 
@@ -222,11 +279,31 @@ async function switchMode(next) {
   mode.value = next
   errorMsg.value = ''
   if (next === 'direct') {
+    stopThreadPoll()
     await loadDirect()
   } else {
+    await loadThread()
+    startThreadPoll()
     await nextTick()
     scrollToEnd()
   }
+}
+
+/* 学生停留在对话页时，老师新发的真人回复需要自动出现 */
+let threadTimer = null
+
+function startThreadPoll() {
+  stopThreadPoll()
+  threadTimer = setInterval(() => {
+    if (props.modelValue && mode.value === 'ai' && !sending.value) {
+      loadThread(true)
+    }
+  }, 8000)
+}
+
+function stopThreadPoll() {
+  clearInterval(threadTimer)
+  threadTimer = null
 }
 
 async function loadDirect() {
@@ -267,7 +344,14 @@ async function send() {
   const question = draft.value.trim()
   if (!question || sending.value || !props.tutor?.tutorId) return
   const seq = chatSeq
-  messages.value.push({ role: 'student', content: question })
+  const history = messages.value
+    .filter((m) => m.senderType === 'STUDENT' || m.senderType === 'AI')
+    .slice(-6)
+    .map((m) => ({
+      role: m.senderType === 'STUDENT' ? 'student' : 'assistant',
+      content: m.content
+    }))
+  messages.value.push({ senderType: 'STUDENT', content: question })
   draft.value = ''
   sending.value = true
   errorMsg.value = ''
@@ -276,16 +360,14 @@ async function send() {
   scrollToEnd()
 
   try {
-    const res = await api.aiAvatarChat(props.tutor.tutorId, {
-      question,
-      history: messages.value.slice(-6).map((m) => ({ role: m.role, content: m.content }))
-    })
+    const res = await api.aiAvatarChat(props.tutor.tutorId, { question, history })
     if (seq !== chatSeq) return
     const data = res?.data || {}
     placeholder.value = Boolean(res?.placeholder)
     if (data.boundary) boundary.value = data.boundary
     messages.value.push({
-      role: 'assistant',
+      id: data.aiMessageId,
+      senderType: 'AI',
       content:
         data.answer ||
         `这个问题我暂时回答不了，建议在开放日当面问${props.tutor?.tutorName || ''}老师本人，由老师亲自解答会更准确。`,
@@ -332,7 +414,10 @@ async function sendDirect() {
   }
 }
 
-onUnmounted(stopWaitClock)
+onUnmounted(() => {
+  stopWaitClock()
+  stopThreadPoll()
+})
 </script>
 
 <style scoped>
@@ -479,6 +564,40 @@ onUnmounted(stopWaitClock)
   background: var(--ios-blue);
   color: #fff;
   border-bottom-right-radius: 5px;
+}
+
+/* 老师真人回复：与 AI 气泡区分，但仍在同一会话流里 */
+.bubble.human {
+  background: rgba(52, 199, 89, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(52, 199, 89, 0.24);
+}
+
+.bubble-head {
+  margin-bottom: 4px;
+}
+
+.bubble-role {
+  display: inline-block;
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.7;
+  color: var(--label-2);
+  background: var(--fill-3);
+}
+
+.bubble-role.human {
+  color: #1d7a3a;
+  background: rgba(52, 199, 89, 0.16);
+}
+
+.sheet-human-note {
+  margin: 0;
+  padding: 0 16px 4px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--label-3);
 }
 
 .bubble-cite {

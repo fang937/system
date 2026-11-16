@@ -19,6 +19,9 @@
         <div class="status-sub">
           {{ meta.labName }} · {{ meta.researchDirection }}
         </div>
+        <div v-if="!meta.connected" class="connect-hint">
+          当前为规则引擎预览。管理员在「全局看板 → AI 通道」接入真实模型后，这里会自动变为已接入。
+        </div>
       </div>
       <dl class="status-facts">
         <div>
@@ -105,11 +108,92 @@
         </div>
       </section>
     </div>
+
+    <!-- 学生咨询：AI 回答与学生提问都落库，导师可查看并真人介入 -->
+    <section class="card card-pad consult-card">
+      <div class="section-title">
+        <h3>学生咨询</h3>
+        <div class="consult-head">
+          <span class="tiny">学生与分身的对话会同步到这里；你可以直接以真人身份回复</span>
+          <el-button size="small" :icon="Refresh" :loading="convLoading" @click="loadConversations">刷新</el-button>
+        </div>
+      </div>
+
+      <div class="consult-layout">
+        <aside class="conv-list">
+          <button
+            v-for="item in conversations"
+            :key="item.studentId"
+            type="button"
+            class="conv-item"
+            :class="{ active: item.studentId === activeStudentId }"
+            @click="openConversation(item.studentId)"
+          >
+            <div class="conv-top">
+              <span class="conv-name">{{ item.studentName }}</span>
+              <span class="conv-no">{{ item.studentNo }}</span>
+              <span v-if="item.unreadCount" class="conv-unread">{{ item.unreadCount }}</span>
+            </div>
+            <div class="conv-last">
+              <span class="conv-sender">{{ item.lastSenderLabel }}</span>{{ item.lastContent }}
+            </div>
+            <div class="conv-time">{{ fmtTime(item.lastAt) }}</div>
+          </button>
+          <div v-if="!conversations.length" class="conv-empty">还没有学生向你的分身提问</div>
+        </aside>
+
+        <div class="conv-detail">
+          <template v-if="activeStudentId">
+            <div class="conv-detail-head">
+              <div>
+                <b>{{ activeStudent?.studentName }}</b>
+                <span class="tiny">{{ activeStudent?.studentNo }} · {{ activeStudent?.className }}</span>
+              </div>
+              <span class="tiny">打开会话即把学生消息标记为已读</span>
+            </div>
+
+            <div ref="convScroller" class="conv-body">
+              <div
+                v-for="message in activeMessages"
+                :key="message.id"
+                class="conv-msg"
+                :class="message.senderType.toLowerCase()"
+              >
+                <div class="conv-msg-label">{{ labelOf(message.senderType) }}</div>
+                <div class="conv-msg-text">{{ message.content }}</div>
+                <div v-if="message.citations?.length" class="conv-msg-cite">
+                  依据：{{ message.citations.join('；') }}
+                </div>
+                <div class="conv-msg-time">{{ fmtTime(message.createdAt) }}</div>
+              </div>
+              <div v-if="!activeMessages.length" class="conv-empty">暂无消息</div>
+            </div>
+
+            <div class="conv-composer">
+              <input
+                v-model="replyDraft"
+                class="chat-input"
+                type="text"
+                placeholder="以真人老师身份回复…（回车发送）"
+                @keyup.enter="sendReply"
+              />
+              <el-button type="primary" :loading="replying" :disabled="!replyDraft.trim()" @click="sendReply">
+                真人回复
+              </el-button>
+            </div>
+            <p class="form-note">
+              回复会标注为「真人老师」，学生打开 AI 分身对话即可看到；AI 分身仍会自动回答后续问题。
+            </p>
+          </template>
+          <div v-else class="conv-empty">从左侧选择一位学生查看对话</div>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { api } from '../../api/index.js'
@@ -216,8 +300,97 @@ async function ask() {
   }
 }
 
-onMounted(load)
-onUnmounted(stopClock)
+/* ---------------- 学生咨询：查看分身会话并真人介入 ---------------- */
+
+const conversations = ref([])
+const convLoading = ref(false)
+const activeStudentId = ref(null)
+const activeStudent = ref(null)
+const activeMessages = ref([])
+const replyDraft = ref('')
+const replying = ref(false)
+const convScroller = ref(null)
+let convTimer = null
+
+const labelOf = (type) => ({ STUDENT: '学生', AI: 'AI 分身', TEACHER: '真人老师' })[type] || type || ''
+const fmtTime = (value) => (value ? String(value).replace('T', ' ').slice(5, 16) : '')
+
+async function loadConversations() {
+  convLoading.value = true
+  try {
+    const list = await api.myAvatarConversations()
+    conversations.value = list || []
+  } catch {
+    // 轮询失败不打断页面，保留上一次列表
+  } finally {
+    convLoading.value = false
+  }
+}
+
+async function openConversation(studentId) {
+  activeStudentId.value = studentId
+  try {
+    const data = await api.myAvatarConversation(studentId)
+    activeStudent.value = data?.student || null
+    activeMessages.value = data?.messages || []
+    await nextTick()
+    scrollConv()
+    await loadConversations()
+  } catch (error) {
+    ElMessage.error(error.message || '会话加载失败')
+  }
+}
+
+async function sendReply() {
+  const text = replyDraft.value.trim()
+  if (!text || replying.value || !activeStudentId.value) return
+  replying.value = true
+  try {
+    const message = await api.myAvatarReply(activeStudentId.value, text)
+    activeMessages.value.push(message)
+    replyDraft.value = ''
+    await nextTick()
+    scrollConv()
+    await loadConversations()
+    ElMessage.success('已回复，学生端会标注为「真人老师」')
+  } catch (error) {
+    ElMessage.error(error.message || '回复失败')
+  } finally {
+    replying.value = false
+  }
+}
+
+function scrollConv() {
+  const el = convScroller.value
+  if (el) el.scrollTop = el.scrollHeight
+}
+
+function startConvPoll() {
+  clearInterval(convTimer)
+  convTimer = setInterval(async () => {
+    await loadConversations()
+    if (activeStudentId.value && !replying.value) {
+      try {
+        const data = await api.myAvatarConversation(activeStudentId.value)
+        activeStudent.value = data?.student || activeStudent.value
+        activeMessages.value = data?.messages || []
+      } catch {
+        // 静默重试
+      }
+    }
+  }, 8000)
+}
+
+onMounted(async () => {
+  await load()
+  await loadConversations()
+  startConvPoll()
+})
+
+onUnmounted(() => {
+  stopClock()
+  clearInterval(convTimer)
+})
 </script>
 
 <style scoped>
@@ -438,6 +611,211 @@ onUnmounted(stopClock)
   border-color: var(--brand-300);
 }
 
+/* ---------------- 学生咨询 ---------------- */
+
+.connect-hint {
+  margin-top: 8px;
+  max-width: 56ch;
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--ink-500);
+}
+
+.consult-card {
+  margin-top: 16px;
+}
+
+.consult-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.consult-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.conv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 6px;
+  border-right: 1px solid rgba(28, 111, 102, 0.08);
+}
+
+.conv-item {
+  padding: 10px 12px;
+  border: none;
+  border-radius: 12px;
+  background: var(--surface-sunken);
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-ios);
+  transition: background-color 0.18s var(--clay-ease), box-shadow 0.18s var(--clay-ease);
+}
+
+.conv-item:hover {
+  background: var(--brand-50);
+}
+
+.conv-item.active {
+  background: var(--brand-50);
+  box-shadow: inset 0 0 0 1px var(--brand-200);
+}
+
+.conv-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.conv-name {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ink-900);
+}
+
+.conv-no {
+  font-size: 10.5px;
+  color: var(--ink-400);
+  font-variant-numeric: tabular-nums;
+}
+
+.conv-unread {
+  margin-left: auto;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #ff3b30;
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.conv-last {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--ink-500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conv-sender {
+  margin-right: 4px;
+  color: var(--ink-400);
+}
+
+.conv-time {
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--ink-400);
+  font-variant-numeric: tabular-nums;
+}
+
+.conv-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+}
+
+.conv-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(28, 111, 102, 0.08);
+}
+
+.conv-detail-head b {
+  margin-right: 8px;
+  font-size: 14px;
+  color: var(--ink-900);
+}
+
+.conv-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 400px;
+  padding: 10px 2px;
+  overflow-y: auto;
+}
+
+.conv-msg {
+  max-width: 82%;
+  padding: 9px 12px;
+  border-radius: 14px;
+  align-self: flex-start;
+  background: var(--surface-sunken);
+  font-size: 13px;
+  line-height: 1.6;
+  animation: msg-in 0.26s var(--clay-ease) both;
+}
+
+.conv-msg.student {
+  background: #eef6ff;
+}
+
+.conv-msg.teacher {
+  align-self: flex-end;
+  background: var(--brand-500);
+  color: #fff;
+}
+
+.conv-msg-label {
+  margin-bottom: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0.72;
+}
+
+.conv-msg-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.conv-msg-cite {
+  margin-top: 5px;
+  font-size: 10.5px;
+  opacity: 0.7;
+}
+
+.conv-msg-time {
+  margin-top: 4px;
+  font-size: 9.5px;
+  opacity: 0.62;
+  font-variant-numeric: tabular-nums;
+}
+
+.conv-msg.teacher .conv-msg-time {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.conv-composer {
+  display: flex;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(28, 111, 102, 0.07);
+}
+
+.conv-empty {
+  padding: 24px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-400);
+}
+
 @media (max-width: 1000px) {
   .grid {
     grid-template-columns: 1fr;
@@ -449,6 +827,18 @@ onUnmounted(stopClock)
 
   .chat-card {
     min-height: 380px;
+  }
+
+  .consult-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .conv-list {
+    max-height: 200px;
+    padding-right: 0;
+    padding-bottom: 8px;
+    border-right: none;
+    border-bottom: 1px solid rgba(28, 111, 102, 0.08);
   }
 }
 </style>

@@ -195,7 +195,10 @@ public class ResumeService {
         deleteQuietly(dir.resolve(String.valueOf(rows.get(0).get("storedName"))).normalize());
         resumeTextService.invalidate(studentId);
         jdbc.update("DELETE FROM student_resumes WHERE student_id = ?", studentId);
+        // 删除简历即失去来源：同步清空结构化草稿，避免导入内容在无简历状态下继续留存/被 AI 分析
+        int drafts = jdbc.update("DELETE FROM resume_drafts WHERE student_id = ?", studentId);
         jdbc.update("UPDATE student_profiles SET resume_url = NULL WHERE user_id = ?", studentId);
+        log.info("学生 {} 删除简历，同步清理结构化草稿 {} 份", studentId, drafts);
     }
 
     /** 学生本人下载。 */

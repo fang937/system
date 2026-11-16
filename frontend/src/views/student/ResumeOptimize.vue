@@ -4,21 +4,32 @@
       <div>
         <h2>AI 优化简历</h2>
         <p>
-          先编辑或从已上传简历导入，再选择目标岗位与侧重点生成逐栏建议。原文与建议并排对照，可单条应用，也可一键应用后继续编辑保存。
+          上传 PDF / DOCX 简历后，可编辑或导入结构化内容，再选择目标岗位与侧重点生成逐栏建议。原文与建议并排对照，可单条应用，也可一键应用后继续编辑保存。
         </p>
       </div>
       <div class="head-actions">
-        <el-button :loading="importing" @click="importFromResume">从已上传简历导入</el-button>
+        <el-button
+          :loading="importing"
+          :disabled="!draft.resume.uploaded"
+          :title="draft.resume.uploaded ? '' : '请先上传简历'"
+          @click="importFromResume"
+        >
+          从已上传简历导入
+        </el-button>
         <el-button type="primary" :loading="saving" :disabled="!dirty" @click="saveDraft">
           {{ dirty ? '保存草稿' : '已保存' }}
         </el-button>
       </div>
     </div>
 
-    <el-alert v-if="!draft.resume.uploaded" :closable="false" type="info" show-icon>
-      <template #title>
-        还没有上传 PDF / DOCX 简历。可以直接在下方填写结构化内容；上传后可用「从已上传简历导入」自动填充。
-      </template>
+    <el-alert v-if="!loading && !draft.resume.uploaded" :closable="false" type="warning" show-icon>
+      <template #title>尚未上传简历，AI 分析不可用</template>
+      <div class="upload-gate">
+        <span>请先上传 PDF / DOCX 简历，再使用 AI 优化与「从简历导入」；下方结构化内容仍可手动编辑。</span>
+        <el-button size="small" type="primary" plain @click="$router.push('/student/resume')">
+          去上传简历
+        </el-button>
+      </div>
     </el-alert>
 
     <div v-loading="loading" class="opt-layout">
@@ -317,6 +328,7 @@ const canOptimize = computed(
     !loading.value &&
     !optimizing.value &&
     !saving.value &&
+    draft.resume.uploaded &&
     selectedSections.value.length > 0 &&
     !overSection.value &&
     !overTotal.value &&
@@ -324,6 +336,8 @@ const canOptimize = computed(
 )
 
 const optimizeHint = computed(() => {
+  if (loading.value) return ''
+  if (!draft.resume.uploaded) return '请先上传 PDF / DOCX 简历，再使用 AI 分析'
   if (!selectedSections.value.length) return '请至少选择 1 个要优化的栏目'
   if (overSection.value) {
     return `「${overSection.value.title}」超过 ${draft.limits.maxSectionChars} 字，请先精简`
@@ -481,6 +495,10 @@ function saveDraft() {
 }
 
 async function optimize() {
+  if (!draft.resume.uploaded) {
+    ElMessage.warning('请先上传 PDF / DOCX 简历，再使用 AI 分析')
+    return
+  }
   if (!canOptimize.value) return
   if (navigator.onLine === false) {
     error.value = offlineError()
@@ -665,6 +683,15 @@ onMounted(load)
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.upload-gate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 4px;
 }
 
 .opt-layout {

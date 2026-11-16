@@ -9,6 +9,7 @@ import com.hbsd.labselect.dto.InterviewCoachQuestionReq;
 import com.hbsd.labselect.dto.ResumeOptimizeReq;
 import com.hbsd.labselect.ocr.ResumeTextService;
 import com.hbsd.labselect.service.PhaseService;
+import com.hbsd.labselect.service.NotifyService;
 import com.hbsd.labselect.service.ResumeDraftService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +45,7 @@ public class AiService {
     private final ResumeTagService resumeTagService;
     private final ResumeProfileService resumeProfileService;
     private final ResumeDraftService resumeDraftService;
+    private final NotifyService notifyService;
 
     /* ---------------- 评分标准 ---------------- */
 
@@ -248,10 +250,199 @@ public class AiService {
         input.put("question", question.trim());
         input.put("history", history == null ? List.of() : history);
 
-        Map<String, Object> data = gateway.avatarChat(input);
         Long studentId = UserContext.get().id();
+        // 学生问题先落库：即使模型调用失败，导师也能在工作台看到并真人回复
+        Long studentMessageId = insertAvatarMessage(tutorId, studentId, "STUDENT", question.trim(), null);
+
+        Map<String, Object> data = gateway.avatarChat(input);
+        String answer = data.get("answer") == null ? "" : String.valueOf(data.get("answer")).trim();
+        Long aiMessageId = null;
+        if (!answer.isEmpty()) {
+            aiMessageId = insertAvatarMessage(tutorId, studentId, "AI", answer,
+                    citationsJson(data.get("citations")));
+        }
+        data.put("studentMessageId", studentMessageId);
+        data.put("aiMessageId", aiMessageId);
         return envelope("AVATAR_CHAT", data,
                 Map.of("tutorId", tutorId, "question", question), studentId, tutorId, null);
+    }
+
+    /* ---------------- 学生与导师分身 / 真人的会话 ---------------- */
+
+    /** 学生端：自己与某位导师分身（含真人回复）的完整会话。 */
+    public List<Map<String, Object>> avatarMessages(Long tutorId) {
+        Long studentId = UserContext.get().id();
+        if (tutorById(tutorId) == null) {
+            throw new BizException("导师不存在");
+        }
+        return avatarThread(tutorId, studentId);
+    }
+
+    /** 导师端：有哪些学生找过我的分身，带最后一条消息与未读数。 */
+    public List<Map<String, Object>> myAvatarConversations() {
+        Long tutorId = currentTutorId();
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT m.student_id AS studentId, u.name AS studentName, u.student_no AS studentNo,
+                       sp.class_name AS className, MAX(m.created_at) AS lastAt,
+                       (SELECT x.content FROM avatar_messages x
+                         WHERE x.tutor_id = m.tutor_id AND x.student_id = m.student_id
+                         ORDER BY x.id DESC LIMIT 1) AS lastContent,
+                       (SELECT x.sender_type FROM avatar_messages x
+                         WHERE x.tutor_id = m.tutor_id AND x.student_id = m.student_id
+                         ORDER BY x.id DESC LIMIT 1) AS lastSender,
+                       SUM(CASE WHEN m.sender_type = 'STUDENT' AND m.teacher_read = 0 THEN 1 ELSE 0 END) AS unreadCount
+                  FROM avatar_messages m
+                  JOIN users u ON u.id = m.student_id
+                  LEFT JOIN student_profiles sp ON sp.user_id = m.student_id
+                 WHERE m.tutor_id = ?
+                 GROUP BY m.tutor_id, m.student_id, u.name, u.student_no, sp.class_name
+                 ORDER BY lastAt DESC
+                """, tutorId);
+        for (Map<String, Object> row : rows) {
+            row.put("lastSenderLabel", senderLabel(String.valueOf(row.get("lastSender"))));
+        }
+        return rows;
+    }
+
+    /** 导师端：与某位学生的完整会话；打开即把学生消息标记为已读。 */
+    public Map<String, Object> myAvatarConversation(Long studentId) {
+        Long tutorId = currentTutorId();
+        List<Map<String, Object>> students = jdbc.queryForList("""
+                SELECT u.id AS studentId, u.name AS studentName, u.student_no AS studentNo,
+                       sp.class_name AS className
+                  FROM users u LEFT JOIN student_profiles sp ON sp.user_id = u.id
+                 WHERE u.id = ? AND u.role = 'STUDENT'
+                """, studentId);
+        if (students.isEmpty()) {
+            throw new BizException("学生不存在");
+        }
+        jdbc.update("""
+                UPDATE avatar_messages SET teacher_read = 1
+                 WHERE tutor_id = ? AND student_id = ? AND sender_type = 'STUDENT' AND teacher_read = 0
+                """, tutorId, studentId);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("student", students.get(0));
+        result.put("messages", avatarThread(tutorId, studentId));
+        return result;
+    }
+
+    /** 导师端：以真人身份回复。消息与学生、AI 回答在同一线程，前端标注「真人老师」。 */
+    public Map<String, Object> replyToStudent(Long studentId, String content) {
+        Long tutorId = currentTutorId();
+        String text = content == null ? "" : content.trim();
+        if (text.isEmpty()) {
+            throw new BizException("回复内容不能为空");
+        }
+        if (text.length() > 1000) {
+            throw new BizException("回复最长 1000 字");
+        }
+        Integer existed = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM avatar_messages WHERE tutor_id = ? AND student_id = ?
+                """, Integer.class, tutorId, studentId);
+        if (existed == null || existed == 0) {
+            throw new BizException("该学生还没有向你的分身提问，无法回复");
+        }
+        Long messageId = insertAvatarMessage(tutorId, studentId, "TEACHER", text, null);
+        jdbc.update("""
+                UPDATE avatar_messages SET teacher_read = 1
+                 WHERE tutor_id = ? AND student_id = ? AND sender_type = 'STUDENT' AND teacher_read = 0
+                """, tutorId, studentId);
+
+        Map<String, Object> tutor = tutorById(tutorId);
+        String tutorName = tutor == null ? "导师" : String.valueOf(tutor.get("tutorName"));
+        notifyService.send(studentId, "NOTICE", "导师回复了你的提问",
+                tutorName + "老师以真人身份回复了你在 AI 分身对话中的提问，打开「导师与方向 → AI 分身」即可查看。",
+                "AVATAR", tutorId);
+
+        Map<String, Object> message = new LinkedHashMap<>();
+        message.put("id", messageId);
+        message.put("senderType", "TEACHER");
+        message.put("senderLabel", senderLabel("TEACHER"));
+        message.put("content", text);
+        message.put("citations", List.of());
+        message.put("createdAt", LocalDateTime.now().withNano(0).toString());
+        message.put("mine", true);
+        return message;
+    }
+
+    private List<Map<String, Object>> avatarThread(Long tutorId, Long studentId) {
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT id, sender_type AS senderType, content, citations, created_at AS createdAt
+                  FROM avatar_messages
+                 WHERE tutor_id = ? AND student_id = ?
+                 ORDER BY id
+                 LIMIT 200
+                """, tutorId, studentId);
+        List<Map<String, Object>> messages = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            Map<String, Object> item = new LinkedHashMap<>(row);
+            String senderType = String.valueOf(row.get("senderType"));
+            item.put("senderLabel", senderLabel(senderType));
+            item.put("citations", parseCitations(row.get("citations")));
+            item.put("mine", "TEACHER".equals(senderType) && isTeacherView()
+                    || "STUDENT".equals(senderType) && !isTeacherView());
+            messages.add(item);
+        }
+        return messages;
+    }
+
+    /** 当前请求是导师端还是学生端：仅用于给消息加「我」标记，不参与权限判断。 */
+    private boolean isTeacherView() {
+        return List.of("TUTOR", "LAB_ADMIN").contains(UserContext.get().role());
+    }
+
+    private Long insertAvatarMessage(Long tutorId, Long studentId, String senderType,
+                                     String content, String citations) {
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        jdbc.update(connection -> {
+            PreparedStatement ps = connection.prepareStatement("""
+                    INSERT INTO avatar_messages (tutor_id, student_id, sender_type, content, citations, teacher_read)
+                    VALUES (?, ?, ?, ?, ?, 0)
+                    """, Statement.RETURN_GENERATED_KEYS);
+            ps.setLong(1, tutorId);
+            ps.setLong(2, studentId);
+            ps.setString(3, senderType);
+            ps.setString(4, content);
+            if (citations == null) {
+                ps.setNull(5, Types.VARCHAR);
+            } else {
+                ps.setString(5, citations);
+            }
+            return ps;
+        }, keyHolder);
+        Number key = keyHolder.getKey();
+        return key == null ? null : key.longValue();
+    }
+
+    private String citationsJson(Object citations) {
+        if (citations == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(citations);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private List<String> parseCitations(Object value) {
+        if (value == null || String.valueOf(value).isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(String.valueOf(value), new TypeReference<List<String>>() {
+            });
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    private String senderLabel(String senderType) {
+        return switch (senderType) {
+            case "AI" -> "AI 分身";
+            case "TEACHER" -> "真人老师";
+            default -> "学生";
+        };
     }
 
     /* ---------------- 学生端：AI 优化简历 ---------------- */
@@ -259,9 +450,17 @@ public class AiService {
     /**
      * 逐栏优化简历。正文一律以服务端草稿为准，前端在调用前会先保存，
      * 避免“请求体里的内容”和“已保存草稿”出现两个版本。
+     *
+     * <p>前置条件：必须先上传 PDF / DOCX 简历。未上传时不允许调用 AI 分析，
+     * 只允许学生手动编辑结构化草稿。</p>
      */
     public Map<String, Object> resumeOptimize(ResumeOptimizeReq req) {
         Long studentId = UserContext.get().id();
+        Integer resumeCount = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM student_resumes WHERE student_id = ?", Integer.class, studentId);
+        if (resumeCount == null || resumeCount == 0) {
+            throw new BizException(400, "尚未上传简历，请先上传 PDF / DOCX 简历后再使用 AI 分析");
+        }
         Map<String, Object> draft = resumeDraftService.load(studentId);
         List<Map<String, Object>> sections = resumeDraftService.pickSections(draft, req == null ? null : req.sections());
         if (sections.isEmpty()) {

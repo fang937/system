@@ -192,6 +192,7 @@ export const api = {
   aiAvatars: () => http.get('/ai/avatars'),
   aiAvatarChat: (tutorId, payload) =>
     http.post(`/ai/avatars/${tutorId}/chat`, payload, { skipErrorToast: true, timeout: AI_TIMEOUT }),
+  aiAvatarMessages: (tutorId) => http.get(`/ai/avatars/${tutorId}/messages`),
   aiResumeReview: (applicationId) =>
     http.post('/ai/resume-review', { applicationId }, { skipErrorToast: true, timeout: AI_REVIEW_TIMEOUT }),
   aiResumeOptimize: (payload) =>
@@ -212,6 +213,10 @@ export const api = {
   saveMyAvatar: (payload) => http.put('/ai/my-avatar', payload),
   myAvatarChat: (question) =>
     http.post('/ai/my-avatar/chat', { question }, { skipErrorToast: true, timeout: AI_TIMEOUT }),
+  myAvatarConversations: () => http.get('/ai/my-avatar/conversations'),
+  myAvatarConversation: (studentId) => http.get(`/ai/my-avatar/conversations/${studentId}`),
+  myAvatarReply: (studentId, content) =>
+    http.post(`/ai/my-avatar/conversations/${studentId}/reply`, { content }),
   aiSetProviderModel: (name, model) => http.put(`/ai/providers/${name}/model`, { model }),
   aiSetProviderKey: (name, apiKey) => http.put(`/ai/providers/${name}/key`, { apiKey }),
   ocrConfig: () => http.get('/admin/ocr-config'),

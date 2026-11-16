@@ -272,11 +272,15 @@ async function download() {
 
 async function remove() {
   try {
-    await ElMessageBox.confirm('删除后导师将看不到这份简历，确认删除？', '删除简历', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
+    await ElMessageBox.confirm(
+      '删除后导师将看不到这份简历，同时会清空「AI 优化简历」中由它导入/编辑的结构化草稿，且 AI 分析需重新上传后才能使用。确认删除？',
+      '删除简历',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
   } catch {
     return
   }

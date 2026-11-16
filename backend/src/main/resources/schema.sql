@@ -379,3 +379,20 @@ CREATE TABLE IF NOT EXISTS direct_messages (
   KEY idx_dm_pair_receiver (receiver_id, sender_id),
   KEY idx_dm_time (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='师生直连私信';
+
+-- 学生与导师 AI 分身 / 真人的会话：AI 回答与学生提问都落库，导师可查看并真人介入。
+-- 与 direct_messages 的区别：这里是围绕导师分身的咨询线程，消息带 sender_type（学生/AI/真人）。
+CREATE TABLE IF NOT EXISTS avatar_messages (
+  id           BIGINT       NOT NULL AUTO_INCREMENT,
+  tutor_id     BIGINT       NOT NULL,
+  student_id   BIGINT       NOT NULL,
+  sender_type  VARCHAR(10)  NOT NULL COMMENT 'STUDENT / AI / TEACHER',
+  content      MEDIUMTEXT   NOT NULL,
+  citations    VARCHAR(1000) DEFAULT NULL COMMENT 'AI 回答引用，JSON 数组',
+  teacher_read TINYINT      NOT NULL DEFAULT 0 COMMENT '学生消息是否已被导师查看',
+  created_at   DATETIME     DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_avatar_thread (tutor_id, student_id, id),
+  KEY idx_avatar_student (student_id, tutor_id),
+  KEY idx_avatar_tutor_unread (tutor_id, teacher_read)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='学生与导师 AI 分身/真人会话';

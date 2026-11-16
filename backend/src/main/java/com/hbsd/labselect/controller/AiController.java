@@ -130,6 +130,37 @@ public class AiController {
         return R.ok(aiService.testMyAvatarChat(body.get("question")));
     }
 
+    /* ---- 学生 ↔ 导师分身 / 真人的会话 ---- */
+
+    /** 学生：自己与某位导师分身（含老师真人回复）的会话记录 */
+    @GetMapping("/avatars/{tutorId}/messages")
+    @RequireRole("STUDENT")
+    public R<List<Map<String, Object>>> avatarMessages(@PathVariable Long tutorId) {
+        return R.ok(aiService.avatarMessages(tutorId));
+    }
+
+    /** 导师：找过自己分身的学生列表（带最后一条消息与未读数） */
+    @GetMapping("/my-avatar/conversations")
+    @RequireRole({"TUTOR", "LAB_ADMIN"})
+    public R<List<Map<String, Object>>> myAvatarConversations() {
+        return R.ok(aiService.myAvatarConversations());
+    }
+
+    /** 导师：与某位学生的完整对话，打开即标记学生消息为已读 */
+    @GetMapping("/my-avatar/conversations/{studentId}")
+    @RequireRole({"TUTOR", "LAB_ADMIN"})
+    public R<Map<String, Object>> myAvatarConversation(@PathVariable Long studentId) {
+        return R.ok(aiService.myAvatarConversation(studentId));
+    }
+
+    /** 导师：以真人身份回复，与学生提问、AI 回答在同一线程 */
+    @PostMapping("/my-avatar/conversations/{studentId}/reply")
+    @RequireRole({"TUTOR", "LAB_ADMIN"})
+    public R<Map<String, Object>> replyToStudent(@PathVariable Long studentId,
+                                                 @RequestBody Map<String, String> body) {
+        return R.ok(aiService.replyToStudent(studentId, body.get("content")));
+    }
+
     /** 管理员：查看所有 AI 通道状态（额度、冷却、最近错误） */
     @GetMapping("/providers")
     @RequireRole("SYS_ADMIN")

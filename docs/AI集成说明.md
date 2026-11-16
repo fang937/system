@@ -144,14 +144,31 @@ GET /api/ai/recommendations        （角色：STUDENT）
 ```
 GET  /api/ai/avatars                       （角色：STUDENT）分身列表
 POST /api/ai/avatars/{tutorId}/chat        （角色：STUDENT）
+GET  /api/ai/avatars/{tutorId}/messages    （角色：STUDENT）自己与该导师的完整线程
 ```
 
 ```json
 // 请求
 {"question": "方向主要做什么？", "history": [{"role":"student","content":"…"},{"role":"assistant","content":"…"}]}
 // 响应
-{"data": {"answer": "…", "citations": ["研究方向：…"], "boundary": "不承诺录取结果…"}}
+{"data": {"answer": "…", "citations": ["研究方向：…"], "boundary": "不承诺录取结果…",
+          "studentMessageId": 1, "aiMessageId": 2}}
 ```
+
+**会话落库**：学生提问先写 `avatar_messages`（`sender_type=STUDENT`），AI 成功后写入
+`sender_type=AI` 与 `citations`。即使模型失败，导师也能在后台看到学生问题并真人回复。
+
+**导师端查看与真人介入**：
+
+```
+GET  /api/ai/my-avatar/conversations                 （角色：TUTOR / LAB_ADMIN）学生列表 + 未读数
+GET  /api/ai/my-avatar/conversations/{studentId}     （角色：TUTOR / LAB_ADMIN）完整线程，打开即已读
+POST /api/ai/my-avatar/conversations/{studentId}/reply  {"content": "…"} 真人回复
+```
+
+消息类型 `sender_type`：`STUDENT` / `AI` / `TEACHER`；接口同时返回 `senderLabel`
+（学生 / AI 分身 / 真人老师）与 `mine`。两端渲染时据此标注来源，老师回复与学生提问、
+AI 回答在同一线程中按时间排列；真人回复后给学生发一条站内通知。
 
 ### 5. 教师端 · 简历初评 + 多维评分建议
 
@@ -238,6 +255,9 @@ POST /api/ai/providers/{name}/activate （角色：SYS_ADMIN，切换首选并�
 
 结构化草稿是优化底稿：学生可手动填写，也可从已上传 PDF / DOCX 简历正文按栏目导入。草稿与原始文件分离，
 AI 只改写草稿文本，不会覆盖上传的简历文件。
+
+**前置条件**：`POST /api/ai/resume-optimize` 要求该学生已上传简历（`student_resumes` 有记录）；未上传直接返回 400，
+前端同时禁用「开始优化」与「从已上传简历导入」，仅保留手动编辑草稿能力。
 
 ```
 GET  /api/student/resume/draft          （角色：STUDENT）读取草稿
