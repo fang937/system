@@ -689,6 +689,10 @@ public class AiService {
 
         Long studentId = asLong(application.get("studentId"));
         Map<String, Object> resume = resumeMeta(studentId);
+        // 前置条件：AI 初评必须基于学生上传的简历文件，未上传直接拒绝（手工打分不受影响）
+        if (!Boolean.TRUE.equals(resume.get("uploaded"))) {
+            throw new BizException(400, "该学生尚未上传简历，无法进行 AI 初评");
+        }
         ResumeTextService.Extract extract = resumeTextService.extract(studentId);
         if (extract.hasText()) {
             resume.put("text", truncate(extract.text(), 4000));

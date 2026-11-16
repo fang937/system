@@ -104,6 +104,7 @@
             <div class="tiny">
               {{ row.studentNo }}
               <span v-if="row.resumeName" class="resume-flag">· 简历已上传</span>
+              <span v-else class="resume-missing">· 简历未上传</span>
             </div>
           </template>
         </el-table-column>
@@ -172,16 +173,29 @@
           <div class="ai-mark">AI</div>
           <div>
             <div class="ai-title">AI 简历初评</div>
-            <div class="ai-meta">基于档案与志愿的初评，供提问与打分参考</div>
+            <div class="ai-meta">基于简历正文、档案与志愿的初评，供提问与打分参考</div>
           </div>
           <span v-if="reviewEngine" class="ai-badge">{{ reviewEngine }}</span>
           <div class="spacer" />
-          <el-button size="small" :loading="reviewLoading" @click="runReview">生成初评</el-button>
+          <el-button size="small" :loading="reviewLoading" :disabled="!canReview" @click="runReview">
+            生成初评
+          </el-button>
+        </div>
+
+        <!-- 前置条件：未上传简历的学生不能做 AI 初评，手工打分不受影响 -->
+        <div v-if="!canReview" class="ai-alert warn">
+          <el-icon class="ai-alert-icon"><WarningFilled /></el-icon>
+          <div>
+            <div class="ai-alert-title">该学生尚未上传简历，AI 初评不可用</div>
+            <div class="ai-alert-sub">
+              AI 初评必须基于学生上传的简历文件。可先按档案与面试表现手工打分；学生上传后刷新名单即可初评。
+            </div>
+          </div>
         </div>
 
         <div v-if="reviewLoading" class="ai-loading">
           <span class="ai-dots"><i /><i /><i /></span>
-          <span>正在阅读档案与志愿… 已等待 {{ reviewElapsed }}s</span>
+          <span>正在阅读简历、档案与志愿… 已等待 {{ reviewElapsed }}s</span>
           <span v-if="reviewElapsed >= 6" class="ai-loading-hint">
             首次评扫描件简历要先解析正文，耗时较长；解析过的简历会缓存，下次很快
           </span>
@@ -384,6 +398,9 @@ function resetDims() {
 
 const interviewOpen = computed(() => store.phaseActive('INTERVIEW'))
 
+/** AI 初评的前置条件：该学生已上传简历（列表里带 resumeName 即视为已上传） */
+const canReview = computed(() => Boolean(current.value?.resumeName))
+
 /** 横幅上的四个里程碑：状态直接取后端 phase，与列表、按钮的放行口径一致 */
 const MILESTONES = [
   { code: 'APPLY', label: '意向填报', hint: '学生提交 3 个平行志愿' },
@@ -458,6 +475,10 @@ async function loadRubric() {  if (rubric.value.length) return
 
 async function runReview() {
   if (!current.value) return
+  if (!canReview.value) {
+    ElMessage.warning('该学生尚未上传简历，无法进行 AI 初评')
+    return
+  }
   reviewLoading.value = true
   reviewError.value = null
   startReviewClock()
@@ -914,6 +935,25 @@ onUnmounted(stopReviewClock)
 
 .resume-flag {
   color: var(--ios-green-dark);
+}
+
+.resume-missing {
+  color: var(--sand-600);
+}
+
+/* 未上传简历属于「前置条件未满足」，用黄色提示，区别于红色失败态 */
+.ai-alert.warn {
+  border-color: rgba(217, 164, 95, 0.42);
+  background: rgba(217, 164, 95, 0.12);
+  color: var(--ink-700);
+}
+
+.ai-alert.warn .ai-alert-title {
+  color: var(--sand-600);
+}
+
+.ai-alert.warn .ai-alert-sub {
+  color: var(--ink-500);
 }
 
 .score-strong {
