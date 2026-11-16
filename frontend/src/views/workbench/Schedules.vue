@@ -96,7 +96,7 @@ const form = reactive({
   capacity: 10
 })
 
-const interviewOpen = computed(() => store.currentPhase?.code === 'INTERVIEW' && store.currentPhase?.state === 'ACTIVE')
+const interviewOpen = computed(() => store.phaseActive('INTERVIEW'))
 
 async function load() {
   loading.value = true

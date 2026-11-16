@@ -4,9 +4,28 @@
       <div class="tl-head-main">
         <h3>{{ compact ? '报名进度' : '双选流程与时间轴' }}</h3>
         <p class="tl-sub">
-          <template v-if="activeStep">
-            当前处于<b>{{ activeStep.title }}</b>
-            <span class="tl-left">· 剩余 {{ countdownText }}</span>
+          <template v-if="activeSteps.length === 1">
+            当前处于<b>{{ activeSteps[0].title }}</b>
+            <span class="tl-left" :class="{ urgent: isUrgent(activeSteps[0].endAt, now) }">
+              · 剩余 {{ countdown(activeSteps[0].endAt, now) }}
+            </span>
+          </template>
+          <template v-else-if="activeSteps.length > 1">
+            当前同时进行 <b>{{ activeSteps.length }}</b> 个阶段
+            <span class="tl-active-list">
+              <span
+                v-for="step in activeSteps"
+                :key="step.code + (step.roundNo ?? '')"
+                class="tl-active-chip"
+                :class="{ urgent: isUrgent(step.endAt, now) }"
+              >
+                <span class="tl-active-name">{{ step.title }}</span>
+                <span class="tl-active-time">
+                  <el-icon v-if="isUrgent(step.endAt, now)"><WarningFilled /></el-icon>
+                  剩余 {{ countdown(step.endAt, now) }}
+                </span>
+              </span>
+            </span>
           </template>
           <template v-else>当前无进行中的阶段，请留意下一节点开放时间</template>
         </p>
@@ -34,7 +53,13 @@
           <el-icon><Clock /></el-icon>
           <span>{{ shortTime(step.startAt) }} — {{ shortTime(step.endAt) }}</span>
         </div>
-        <span v-if="step.state === 'ACTIVE'" class="tl-card-left">剩余 {{ countdown(step.endAt) }}</span>
+        <span
+          v-if="step.state === 'ACTIVE'"
+          class="tl-card-left"
+          :class="{ urgent: isUrgent(step.endAt, now) }"
+        >
+          剩余 {{ countdown(step.endAt, now) }}
+        </span>
       </li>
     </ol>
 
@@ -53,7 +78,13 @@
           <div class="tl-time">
             <el-icon><Clock /></el-icon>
             <span>{{ fmtTime(step.startAt) }} — {{ fmtTime(step.endAt) }}</span>
-            <span v-if="step.state === 'ACTIVE'" class="tl-countdown">剩余 {{ countdown(step.endAt) }}</span>
+            <span
+              v-if="step.state === 'ACTIVE'"
+              class="tl-countdown"
+              :class="{ urgent: isUrgent(step.endAt, now) }"
+            >
+              剩余 {{ countdown(step.endAt, now) }}
+            </span>
           </div>
         </div>
       </li>
@@ -67,9 +98,9 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { Clock, InfoFilled } from '@element-plus/icons-vue'
-import { countdown, fmtTime, phaseStateMap } from '../utils/labels.js'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { Clock, InfoFilled, WarningFilled } from '@element-plus/icons-vue'
+import { countdown, fmtTime, isUrgent, phaseStateMap } from '../utils/labels.js'
 
 const props = defineProps({
   // /api/meta/phase 返回的 phases（含轮次展开的所有阶段）
@@ -155,13 +186,22 @@ const steps = computed(() =>
   })
 )
 
-/** 进行中的阶段取 seq 最大的那条，与后端 active() 口径一致 */
-const activeStep = computed(() => {
-  const list = steps.value.filter((s) => s.state === 'ACTIVE')
-  return list.length ? list[list.length - 1] : null
+/** 进行中的全部阶段：时间窗可能重叠，逐条展示各自剩余时间 */
+const activeSteps = computed(() => steps.value.filter((s) => s.state === 'ACTIVE'))
+
+/** 10 秒一跳，足够让倒计时与「不足 1 小时」的红色状态及时更新 */
+const now = ref(Date.now())
+let ticker = null
+
+onMounted(() => {
+  ticker = setInterval(() => {
+    now.value = Date.now()
+  }, 10000)
 })
 
-const countdownText = computed(() => (activeStep.value ? countdown(activeStep.value.endAt) : ''))
+onBeforeUnmount(() => {
+  clearInterval(ticker)
+})
 
 /** 卡片条空间有限，时间只保留「月-日」 */
 function shortTime(value) {
@@ -219,6 +259,60 @@ const contactText = computed(() =>
 .tl-left {
   color: var(--sand-600);
   font-weight: 600;
+}
+
+/* 剩余不足 1 小时：统一转红 */
+.tl-left.urgent {
+  color: var(--ios-red-dark);
+  font-weight: 800;
+}
+
+/* 多阶段并行：逐个列出各自的剩余时间 */
+.tl-active-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.tl-active-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(47, 157, 146, 0.08);
+  color: var(--brand-700);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.7;
+}
+
+.tl-active-name {
+  font-weight: 650;
+}
+
+.tl-active-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-active-time .el-icon {
+  font-size: 11px;
+}
+
+.tl-active-chip.urgent {
+  background: rgba(255, 59, 48, 0.1);
+  color: var(--ios-red-dark);
+  box-shadow: inset 0 0 0 1px rgba(255, 59, 48, 0.18);
+}
+
+.tl-active-chip.urgent .tl-active-time {
+  font-weight: 800;
 }
 
 /* ============================================================================
@@ -321,9 +415,20 @@ const contactText = computed(() =>
 }
 
 .tl-card-left {
+  align-self: flex-start;
   font-size: 10.5px;
   font-weight: 700;
   color: var(--brand-700);
+}
+
+/* 进行中卡片是薄荷实底，红色时间用白底胶囊托住 */
+.tl-card-left.urgent {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ios-red-dark);
+  font-weight: 800;
+  box-shadow: 0 0 0 1px rgba(215, 0, 21, 0.14), 0 3px 10px rgba(215, 0, 21, 0.18);
 }
 
 /* ---- 进行中：薄荷实底 ---- */
@@ -357,6 +462,11 @@ const contactText = computed(() =>
 
 .tl-card.active .tl-card-left {
   color: #fff;
+}
+
+/* 进行中 + 不足 1 小时：白底红字，覆盖上面的白色文字 */
+.tl-card.active .tl-card-left.urgent {
+  color: var(--ios-red-dark);
 }
 
 /* ---- 未开始：奶油底 ---- */
@@ -508,6 +618,11 @@ const contactText = computed(() =>
 .tl-countdown {
   color: var(--sand-600);
   font-weight: 600;
+}
+
+.tl-countdown.urgent {
+  color: var(--ios-red-dark);
+  font-weight: 800;
 }
 
 .tl-contact {

@@ -155,7 +155,7 @@ const dialogVisible = ref(false)
 const current = ref(null)
 const manual = reactive({ tutorId: null, reason: '' })
 
-const adjustOpen = computed(() => store.currentPhase?.code === 'ADJUST' && store.currentPhase?.state === 'ACTIVE')
+const adjustOpen = computed(() => store.phaseActive('ADJUST'))
 const totalRemaining = computed(() => vacancies.value.reduce((sum, item) => sum + (item.remainingQuota || 0), 0))
 
 // 不服从任何调剂的学生：自动调剂不会处理，需管理员人工约谈分配

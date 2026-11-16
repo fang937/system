@@ -16,7 +16,10 @@
     </el-alert>
     <el-alert v-else :closable="false" type="success" show-icon>
       <template #title>
-        确认阶段进行中，截止 {{ fmtTime(confirmPhase.endAt) }}，剩余 {{ countdown(confirmPhase.endAt) }}
+        确认阶段进行中，截止 {{ fmtTime(confirmPhase.endAt) }}，
+        <span class="time-left" :class="{ urgent: isUrgent(confirmPhase.endAt) }">
+          剩余 {{ countdown(confirmPhase.endAt) }}
+        </span>
       </template>
     </el-alert>
 
@@ -50,7 +53,9 @@
         </div>
 
         <div v-if="canAct(offer)" class="offer-actions">
-          <span class="tiny">剩余 {{ countdown(offer.confirmDeadline) }}</span>
+          <span class="tiny time-left" :class="{ urgent: isUrgent(offer.confirmDeadline) }">
+            剩余 {{ countdown(offer.confirmDeadline) }}
+          </span>
           <div class="spacer" />
           <el-button :loading="acting === offer.id" @click="decline(offer)">放弃</el-button>
           <el-button type="primary" :loading="acting === offer.id" @click="confirm(offer)">接受该 Offer</el-button>
@@ -68,7 +73,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { api } from '../../api/index.js'
 import { useUserStore } from '../../stores/user.js'
-import { confirmStatusMap, countdown, fmtTime, offerStatusMap, roundLabel } from '../../utils/labels.js'
+import { confirmStatusMap, countdown, fmtTime, isUrgent, offerStatusMap, roundLabel } from '../../utils/labels.js'
 
 const store = useUserStore()
 const loading = ref(false)
@@ -205,5 +210,11 @@ onMounted(load)
 
 .spacer {
   flex: 1;
+}
+
+/* 剩余不足 1 小时：时间转红 */
+.time-left.urgent {
+  color: var(--ios-red-dark);
+  font-weight: 800;
 }
 </style>

@@ -24,7 +24,10 @@
 
     <el-alert v-if="editable" :closable="false" type="success" show-icon>
       <template #title>
-        填报进行中，截止 {{ fmtTime(applyWindow.endAt) }}，剩余 {{ countdown(applyWindow.endAt) }}
+        填报进行中，截止 {{ fmtTime(applyWindow.endAt) }}，
+        <span class="time-left" :class="{ urgent: isUrgent(applyWindow.endAt) }">
+          剩余 {{ countdown(applyWindow.endAt) }}
+        </span>
       </template>
     </el-alert>
 
@@ -197,7 +200,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { api } from '../../api/index.js'
 import { useUserStore } from '../../stores/user.js'
-import { applicationStatusMap, countdown, fmtTime } from '../../utils/labels.js'
+import { applicationStatusMap, countdown, fmtTime, isUrgent } from '../../utils/labels.js'
 import { labTone } from '../../utils/tones.js'
 import SelectionTimeline from '../../components/SelectionTimeline.vue'
 
@@ -331,6 +334,12 @@ onMounted(load)
 .timeline-block {
   display: block;
   margin-bottom: 14px;
+}
+
+/* 剩余不足 1 小时：时间转红 */
+.time-left.urgent {
+  color: var(--ios-red-dark);
+  font-weight: 800;
 }
 
 .choice-list {

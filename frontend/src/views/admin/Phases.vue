@@ -30,7 +30,13 @@
             </div>
             <div class="tiny">
               {{ fmtTime(phase.startAt) }} ~ {{ fmtTime(phase.endAt) }}
-              <span v-if="phase.state === 'ACTIVE'" class="active-tip">· 剩余 {{ countdown(phase.endAt) }}</span>
+              <span
+                v-if="phase.state === 'ACTIVE'"
+                class="active-tip"
+                :class="{ urgent: isUrgent(phase.endAt) }"
+              >
+                · 剩余 {{ countdown(phase.endAt) }}
+              </span>
             </div>
           </div>
           <div class="phase-actions">
@@ -71,7 +77,7 @@ import { Refresh } from '@element-plus/icons-vue'
 import { api } from '../../api/index.js'
 import { useUserStore } from '../../stores/user.js'
 import SelectionTimeline from '../../components/SelectionTimeline.vue'
-import { countdown, fmtTime, phaseStateMap } from '../../utils/labels.js'
+import { countdown, fmtTime, isUrgent, phaseStateMap } from '../../utils/labels.js'
 
 const store = useUserStore()
 const loading = ref(false)
@@ -278,5 +284,11 @@ onMounted(load)
 
 .active-tip {
   color: var(--ios-green-dark);
+}
+
+/* 剩余不足 1 小时：时间转红 */
+.active-tip.urgent {
+  color: var(--ios-red-dark);
+  font-weight: 800;
 }
 </style>

@@ -50,14 +50,39 @@
           <el-icon :size="19"><Menu /></el-icon>
         </button>
 
-        <div class="phase-badge" :class="phaseState">
-          <span class="pb-dot" />
-          <div class="pb-text">
-            <span class="pb-label">{{ phaseState === 'active' ? '正在进行' : '流程状态' }}</span>
-            <span v-if="store.currentPhase" class="pb-name">{{ store.currentPhase.name }}</span>
-            <span v-else class="pb-name">当前无进行中阶段</span>
-          </div>
-          <span v-if="store.currentPhase" class="pb-count">{{ countdownText }}</span>
+        <!-- 阶段标识：多个阶段时间窗重叠时逐个显示剩余时间，不足 1 小时转红 -->
+        <div
+          ref="phaseBar"
+          class="phase-bar"
+          :class="[phaseState, { 'is-scrollable': phaseBarOverflow }]"
+          role="group"
+          :aria-label="phaseTitle || '当前无进行中阶段'"
+          :title="phaseTitle"
+        >
+          <template v-if="activePhases.length">
+            <span class="pb-dot" />
+            <span class="pb-lead">
+              {{ activePhases.length > 1 ? `${activePhases.length} 个阶段进行中` : '正在进行' }}
+            </span>
+            <span class="pb-sep" aria-hidden="true" />
+            <span
+              v-for="phase in activePhases"
+              :key="phase.id || phase.code + (phase.roundNo ?? '')"
+              class="pb-seg"
+              :class="{ urgent: isUrgent(phase.endAt, now) }"
+            >
+              <span class="pb-name">{{ phase.name }}</span>
+              <span class="pb-count" :class="{ urgent: isUrgent(phase.endAt, now) }">
+                <el-icon v-if="isUrgent(phase.endAt, now)" class="pb-alert"><WarningFilled /></el-icon>
+                <span class="pb-count-text">剩余 {{ countdownClock(phase.endAt, now) }}</span>
+              </span>
+            </span>
+          </template>
+          <template v-else>
+            <span class="pb-dot" />
+            <span class="pb-lead">流程状态</span>
+            <span class="pb-name pb-idle">当前无进行中阶段</span>
+          </template>
         </div>
 
         <div class="spacer" />
@@ -119,8 +144,10 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { WarningFilled } from '@element-plus/icons-vue'
 import { api } from '../api/index.js'
 import { useUserStore } from '../stores/user.js'
+import { countdown, countdownClock, isUrgent } from '../utils/labels.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -210,25 +237,34 @@ watch(drawer, (open) => {
   document.body.style.overflow = open ? 'hidden' : ''
 })
 
-const phaseState = computed(() => {
-  const phase = store.currentPhase
-  if (!phase) return 'none'
-  if (phase.state === 'PENDING') return 'pending'
-  if (phase.state === 'CLOSED') return 'closed'
-  return 'active'
-})
+/** 并行阶段：直接取后端返回的全部 ACTIVE 阶段，按业务顺序排列 */
+const activePhases = computed(() =>
+  (store.phase?.phases || [])
+    .filter((phase) => phase.state === 'ACTIVE')
+    .slice()
+    .sort((a, b) => (a.seq || 0) - (b.seq || 0) || (a.roundNo || 0) - (b.roundNo || 0))
+)
 
-const countdownText = computed(() => {
-  const phase = store.currentPhase
-  if (!phase) return ''
-  const end = new Date(String(phase.endAt).replace(/-/g, '/')).getTime()
-  const diff = end - now.value
-  if (diff <= 0) return '本阶段已结束'
-  const d = Math.floor(diff / 86400000)
-  const h = Math.floor((diff % 86400000) / 3600000)
-  const m = Math.floor((diff % 3600000) / 60000)
-  const s = Math.floor((diff % 60000) / 1000)
-  return `剩余 ${d > 0 ? d + ' 天 ' : ''}${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+const phaseState = computed(() => (activePhases.value.length ? 'active' : 'none'))
+
+/** 内容超宽时给右缘加淡出，提示可以横向滑动查看其余阶段 */
+const phaseBar = ref(null)
+const phaseBarOverflow = ref(false)
+let barObserver = null
+
+function measurePhaseBar() {
+  const el = phaseBar.value
+  phaseBarOverflow.value = Boolean(el) && el.scrollWidth - el.clientWidth > 2
+}
+
+const phaseTitle = computed(() =>
+  activePhases.value.length
+    ? activePhases.value.map((phase) => `${phase.name} 剩余 ${countdown(phase.endAt, now.value)}`).join('，')
+    : ''
+)
+
+watch(activePhases, () => {
+  requestAnimationFrame(measurePhaseBar)
 })
 
 async function loadNotices() {
@@ -260,6 +296,12 @@ onMounted(async () => {
     await store.fetchMe().catch(() => {})
   }
   await store.refreshPhase()
+  requestAnimationFrame(measurePhaseBar)
+  if (typeof ResizeObserver !== 'undefined' && phaseBar.value) {
+    barObserver = new ResizeObserver(measurePhaseBar)
+    barObserver.observe(phaseBar.value)
+  }
+  window.addEventListener('resize', measurePhaseBar)
   loadNotices()
   timer = setInterval(() => {
     now.value = Date.now()
@@ -273,6 +315,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   clearInterval(timer)
   clearInterval(poller)
+  barObserver?.disconnect()
+  window.removeEventListener('resize', measurePhaseBar)
   document.body.style.overflow = ''
 })
 </script>
@@ -542,21 +586,41 @@ onBeforeUnmount(() => {
   display: none;
 }
 
-/* 顶栏「当前阶段」标识：进行中时为实色渐变，确保一眼看到 */
-.phase-badge {
+/* 顶栏阶段标识：支持多个阶段并行，逐段列出各自剩余时间 */
+.phase-bar {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   height: 38px;
-  padding: 0 12px;
-  border-radius: 12px;
+  padding: 0 10px 0 12px;
+  border-radius: var(--radius-pill);
   background: var(--fill-1);
   color: var(--label-2);
-  max-width: 46vw;
+  max-width: 56vw;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
   transition: background 0.3s var(--ease-ios), box-shadow 0.3s var(--ease-ios);
 }
 
-.phase-badge .pb-dot {
+.phase-bar::-webkit-scrollbar {
+  display: none;
+}
+
+/* 多阶段超宽：右缘淡出，提示可横向滑动 */
+.phase-bar.is-scrollable {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    #000 0,
+    #000 calc(100% - 26px),
+    rgba(0, 0, 0, 0.18) 100%
+  );
+  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 26px), rgba(0, 0, 0, 0.18) 100%);
+}
+
+.phase-bar .pb-dot {
   width: 8px;
   height: 8px;
   flex: none;
@@ -564,59 +628,79 @@ onBeforeUnmount(() => {
   background: currentColor;
 }
 
-.phase-badge .pb-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  line-height: 1.18;
+.phase-bar .pb-lead {
+  flex: none;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  opacity: 0.78;
+  white-space: nowrap;
 }
 
-.phase-badge .pb-label {
-  font-size: 9.5px;
-  opacity: 0.72;
-  letter-spacing: 0.08em;
+.phase-bar .pb-sep {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  background: currentColor;
+  opacity: 0.22;
 }
 
-.phase-badge .pb-name {
+.phase-bar .pb-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.phase-bar .pb-name {
   font-size: 12.5px;
   font-weight: 650;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.phase-badge .pb-count {
+.phase-bar .pb-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   flex: none;
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
   padding: 3px 9px;
   border-radius: var(--radius-pill);
   background: rgba(0, 0, 0, 0.06);
+  white-space: nowrap;
 }
 
-.phase-badge.active {
+.phase-bar.active {
   background: linear-gradient(135deg, #22b455, #159fb5);
   color: #fff;
   box-shadow: 0 4px 14px rgba(34, 180, 85, 0.32);
 }
 
-.phase-badge.active .pb-dot {
+.phase-bar.active .pb-dot {
   background: #fff;
   animation: dot-pulse 1.8s var(--ease-ios) infinite;
 }
 
-.phase-badge.active .pb-count {
+.phase-bar.active .pb-count {
   background: rgba(255, 255, 255, 0.22);
 }
 
-.phase-badge.pending {
-  background: rgba(255, 149, 0, 0.14);
-  color: var(--ios-orange-dark);
+/* 剩余不足 1 小时：时间文字转红，用白底托住保证在薄荷实底上仍可读 */
+.phase-bar .pb-count.urgent {
+  color: var(--ios-red-dark);
+  background: rgba(255, 59, 48, 0.12);
+  font-weight: 800;
 }
 
-.phase-badge.closed {
-  background: var(--fill-1);
-  color: var(--label-3);
+.phase-bar.active .pb-count.urgent {
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(215, 0, 21, 0.16), 0 4px 12px rgba(215, 0, 21, 0.18);
+  animation: urgent-breathe 1.9s var(--ease-ios) infinite;
+}
+
+.phase-bar .pb-alert {
+  font-size: 11px;
 }
 
 @keyframes dot-pulse {
@@ -626,6 +710,22 @@ onBeforeUnmount(() => {
   }
   55% {
     box-shadow: 0 0 0 6px rgba(255, 255, 255, 0);
+  }
+}
+
+@keyframes urgent-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(215, 0, 21, 0.16), 0 4px 12px rgba(215, 0, 21, 0.14);
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgba(215, 0, 21, 0.3), 0 4px 16px rgba(215, 0, 21, 0.3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phase-bar.active .pb-count.urgent {
+    animation: none;
   }
 }
 
@@ -823,13 +923,24 @@ onBeforeUnmount(() => {
     display: inline-flex;
   }
 
-  .countdown {
-    display: none;
+  .phase-bar {
+    max-width: 54vw;
+    height: 36px;
+    gap: 8px;
+    padding: 0 8px 0 10px;
   }
 
-  .phase-pill {
-    max-width: 52vw;
+  .phase-bar .pb-lead {
+    font-size: 10px;
+  }
+
+  .phase-bar .pb-name {
     font-size: 12px;
+  }
+
+  .phase-bar .pb-count {
+    font-size: 10.5px;
+    padding: 2px 7px;
   }
 
   .user-name {
@@ -846,8 +957,8 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 400px) {
-  .phase-pill {
-    max-width: 46vw;
+  .phase-bar {
+    max-width: 50vw;
   }
 }
 
@@ -1011,6 +1122,7 @@ onBeforeUnmount(() => {
 
 .icon-btn {
   color: var(--ink-500);
+  flex: none;
 }
 
 .icon-btn:hover {
@@ -1018,43 +1130,41 @@ onBeforeUnmount(() => {
   color: var(--brand-700);
 }
 
-/* 当前阶段：胶囊徽章，进行中为薄荷实底 */
-.phase-badge {
+/* 当前阶段：胶囊条，多阶段并行时横向排列；进行中为薄荷实底 */
+.phase-bar {
   gap: 10px;
   height: 40px;
-  padding: 0 15px 0 13px;
+  padding: 0 10px 0 14px;
   border-radius: 999px;
   background: var(--cream-100);
   color: var(--ink-600);
   border: 1px solid rgba(217, 164, 95, 0.22);
-  max-width: 48vw;
+  max-width: 58vw;
 }
 
-.phase-badge .pb-dot {
+.phase-bar .pb-dot {
   width: 7px;
   height: 7px;
 }
 
-.phase-badge .pb-text {
-  gap: 0;
-  line-height: 1.15;
-}
-
-.phase-badge .pb-label {
-  display: block;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
+.phase-bar .pb-lead {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   opacity: 0.62;
 }
 
-.phase-badge .pb-name {
+.phase-bar .pb-name {
   font-size: 12.5px;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
-.phase-badge .pb-count {
+.phase-bar .pb-idle {
+  font-weight: 650;
+}
+
+.phase-bar .pb-count {
   font-size: 11px;
   font-weight: 600;
   padding: 4px 10px;
@@ -1062,31 +1172,26 @@ onBeforeUnmount(() => {
   background: rgba(28, 111, 102, 0.07);
 }
 
-.phase-badge.active {
+.phase-bar.active {
   background: linear-gradient(120deg, #3cb8a8 0%, #2f9d92 55%, #248a80 100%);
   color: #fff;
   border-color: transparent;
   box-shadow: 0 10px 24px -14px rgba(47, 157, 146, 1), inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
-.phase-badge.active .pb-label {
-  opacity: 0.78;
+.phase-bar.active .pb-lead {
+  opacity: 0.82;
 }
 
-.phase-badge.active .pb-count {
+.phase-bar.active .pb-count {
   background: rgba(255, 255, 255, 0.22);
 }
 
-.phase-badge.pending {
-  background: var(--cream-100);
-  color: var(--sand-600);
-  border-color: rgba(217, 164, 95, 0.3);
-}
-
-.phase-badge.closed {
-  background: rgba(91, 125, 119, 0.08);
-  color: var(--ink-400);
-  border-color: transparent;
+.phase-bar.active .pb-count.urgent {
+  background: #fff;
+  color: var(--ios-red-dark);
+  font-weight: 800;
+  box-shadow: 0 0 0 1px rgba(215, 0, 21, 0.14), 0 4px 12px rgba(215, 0, 21, 0.18);
 }
 
 /* ---------------- 用户区 ---------------- */
@@ -1101,6 +1206,12 @@ onBeforeUnmount(() => {
   color: var(--ink-800);
   background: rgba(255, 255, 255, 0.7);
   box-shadow: inset 0 1px 0 #fff, 0 6px 16px -14px rgba(28, 111, 102, 0.9);
+  flex: none;
+}
+
+/* 顶栏被多阶段条挤压时，姓名保持单行，改由阶段条收缩滚动 */
+.user-name {
+  white-space: nowrap;
 }
 
 .user:hover {
@@ -1174,13 +1285,26 @@ onBeforeUnmount(() => {
     padding: 16px 14px calc(40px + env(safe-area-inset-bottom));
   }
 
-  .phase-badge {
+  .phase-bar {
     max-width: 54vw;
     height: 36px;
   }
 
-  .phase-badge .pb-count {
+  .phase-bar .pb-lead {
     display: none;
+  }
+
+  .phase-bar .pb-sep {
+    display: none;
+  }
+
+  /* 手机端空间有限：隐藏装饰圆点，把「即将截止」的阶段排到最前，保证红色倒计时可见 */
+  .phase-bar .pb-dot {
+    display: none;
+  }
+
+  .phase-bar .pb-seg.urgent {
+    order: -1;
   }
 }
 </style>

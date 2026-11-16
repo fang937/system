@@ -90,7 +90,7 @@ const pool = ref([])
 const vacancies = ref([])
 const picks = reactive({})
 
-const adjustOpen = computed(() => store.currentPhase?.code === 'ADJUST' && store.currentPhase?.state === 'ACTIVE')
+const adjustOpen = computed(() => store.phaseActive('ADJUST'))
 
 async function load() {
   loading.value = true

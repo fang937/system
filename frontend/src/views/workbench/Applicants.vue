@@ -382,7 +382,7 @@ function resetDims() {
   Object.keys(dims).forEach((key) => delete dims[key])
 }
 
-const interviewOpen = computed(() => store.currentPhase?.code === 'INTERVIEW' && store.currentPhase?.state === 'ACTIVE')
+const interviewOpen = computed(() => store.phaseActive('INTERVIEW'))
 
 /** 横幅上的四个里程碑：状态直接取后端 phase，与列表、按钮的放行口径一致 */
 const MILESTONES = [

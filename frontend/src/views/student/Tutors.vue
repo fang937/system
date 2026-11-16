@@ -13,12 +13,16 @@
       </el-button>
     </div>
 
-    <el-alert v-if="store.currentPhase" :closable="false" type="info" show-icon>
+    <el-alert v-if="activePhases.length" :closable="false" type="info" show-icon>
       <template #title>
-        当前阶段为：{{ store.currentPhase.name }}
-        <span class="muted" style="margin-left: 8px">
-          {{ fmtTime(store.currentPhase.startAt) }} ~ {{ fmtTime(store.currentPhase.endAt) }}
-        </span>
+        当前阶段为：
+        <template v-for="(phase, index) in activePhases" :key="phase.id || phase.code + (phase.roundNo ?? '')">
+          <span v-if="index > 0" class="phase-sep">；</span>
+          <span class="phase-name">{{ phase.name }}</span>
+          <span class="muted phase-window">
+            {{ fmtTime(phase.startAt) }} ~ {{ fmtTime(phase.endAt) }}
+          </span>
+        </template>
       </template>
     </el-alert>
 
@@ -254,6 +258,13 @@ import SelectionTimeline from '../../components/SelectionTimeline.vue'
 
 const router = useRouter()
 const store = useUserStore()
+/** 并行阶段：同一时间窗内可能有多条，全部列出避免只看到一个 */
+const activePhases = computed(() =>
+  (store.phase?.phases || [])
+    .filter((phase) => phase.state === 'ACTIVE')
+    .slice()
+    .sort((a, b) => (a.seq || 0) - (b.seq || 0) || (a.roundNo || 0) - (b.roundNo || 0))
+)
 const loading = ref(false)
 const tutors = ref([])
 const activeLab = ref(0)
@@ -425,6 +436,20 @@ async function loadAvatarPersonas() {
 </script>
 
 <style scoped>
+/* 并行阶段的名称与时间窗：用中文分号分隔，避免多项挤在一起 */
+.phase-name {
+  font-weight: 600;
+}
+
+.phase-window {
+  margin-left: 6px;
+}
+
+.phase-sep {
+  margin: 0 4px 0 6px;
+  color: var(--ink-300);
+}
+
 .timeline-block {
   display: block;
   margin-bottom: 14px;

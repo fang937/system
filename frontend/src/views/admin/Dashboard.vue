@@ -10,12 +10,17 @@
       </div>
     </div>
 
-    <el-alert v-if="store.currentPhase" :closable="false" type="info" show-icon>
+    <el-alert v-if="activePhases.length" :closable="false" type="info" show-icon>
       <template #title>
-        当前阶段为：{{ store.currentPhase.name }}
-        <span class="muted" style="margin-left: 8px">
-          {{ fmtTime(store.currentPhase.startAt) }} ~ {{ fmtTime(store.currentPhase.endAt) }}
-        </span>
+        当前阶段为：
+        <template v-for="(phase, index) in activePhases" :key="phase.id || phase.code + (phase.roundNo ?? '')">
+          <span v-if="index > 0" class="phase-sep">；</span>
+          <span class="phase-name">{{ phase.name }}</span>
+          <span class="muted phase-window">{{ fmtTime(phase.startAt) }} ~ {{ fmtTime(phase.endAt) }}</span>
+          <span class="phase-left" :class="{ urgent: isUrgent(phase.endAt) }">
+            剩余 {{ countdown(phase.endAt) }}
+          </span>
+        </template>
       </template>
     </el-alert>
 
@@ -307,10 +312,17 @@ import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { api } from '../../api/index.js'
 import { useUserStore } from '../../stores/user.js'
-import { fmtTime } from '../../utils/labels.js'
+import { countdown, fmtTime, isUrgent } from '../../utils/labels.js'
 import { labTone, usageTone } from '../../utils/tones.js'
 
 const store = useUserStore()
+/** 并行阶段可能不止一条，全部列出，避免「当前阶段」只显示其中一条 */
+const activePhases = computed(() =>
+  (store.phase?.phases || [])
+    .filter((phase) => phase.state === 'ACTIVE')
+    .slice()
+    .sort((a, b) => (a.seq || 0) - (b.seq || 0) || (a.roundNo || 0) - (b.roundNo || 0))
+)
 const loading = ref(false)
 const data = ref({})
 const providers = ref([])
@@ -621,5 +633,31 @@ onMounted(() => {
 .strong {
   font-weight: 600;
   color: var(--ink-1);
+}
+
+/* 并行阶段提示：名称、时间窗与剩余时间排在同一行，窄屏可自动换行 */
+.phase-name {
+  font-weight: 600;
+}
+
+.phase-window {
+  margin-left: 6px;
+}
+
+.phase-left {
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ios-green-dark);
+  font-weight: 600;
+}
+
+.phase-left.urgent {
+  color: var(--ios-red-dark);
+  font-weight: 800;
+}
+
+.phase-sep {
+  margin: 0 4px 0 6px;
+  color: var(--ink-300);
 }
 </style>

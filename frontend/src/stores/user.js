@@ -30,7 +30,22 @@ export const useUserStore = defineStore('user', {
       return '/login'
     },
     currentPhase: (state) => state.phase?.phase || null,
-    currentRound: (state) => state.phase?.round || 1
+    currentRound: (state) => state.phase?.round || 1,
+    /**
+     * 指定阶段当前是否开放。
+     * 阶段时间窗可能重叠，不能只看 currentPhase（它只取业务顺序最大的那条），
+     * 否则并行期间会出现「顶栏显示进行中、页面却判定未开放」的矛盾。
+     * 轮次相关阶段（APPLY/INTERVIEW/CONFIRM）按当前轮次匹配，全局阶段忽略轮次。
+     */
+    phaseActive: (state) => (code) => {
+      const round = state.phase?.round
+      return (state.phase?.phases || []).some(
+        (p) =>
+          p.code === code &&
+          p.state === 'ACTIVE' &&
+          (p.roundNo === null || p.roundNo === undefined || Number(p.roundNo) === Number(round))
+      )
+    }
   },
 
   actions: {
