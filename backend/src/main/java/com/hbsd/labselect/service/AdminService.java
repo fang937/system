@@ -125,9 +125,12 @@ public class AdminService {
         if (!req.endAt().isAfter(req.startAt())) {
             throw new BizException("结束时间必须晚于开始时间");
         }
+        LocalDateTime oldStart = phase.getStartAt();
+        LocalDateTime oldEnd = phase.getEndAt();
         phase.setStartAt(req.startAt());
         phase.setEndAt(req.endAt());
         phaseMapper.updateById(phase);
+        syncBatch(phase, oldStart, oldEnd);
         refreshStatuses();
     }
 
@@ -143,9 +146,12 @@ public class AdminService {
             duration = Duration.ofDays(1);
         }
         LocalDateTime now = LocalDateTime.now().withNano(0);
+        LocalDateTime oldStart = phase.getStartAt();
+        LocalDateTime oldEnd = phase.getEndAt();
         phase.setStartAt(now);
         phase.setEndAt(now.plus(duration));
         phaseMapper.updateById(phase);
+        syncBatch(phase, oldStart, oldEnd);
         if (phase.getRoundNo() != null) {
             phaseService.setCurrentRound(phase.getRoundNo());
         }
@@ -159,9 +165,101 @@ public class AdminService {
         if (phase == null) {
             throw new BizException("阶段不存在");
         }
-        phase.setEndAt(LocalDateTime.now().withNano(0));
+        LocalDateTime now = LocalDateTime.now().withNano(0);
+        if (!now.isAfter(phase.getStartAt())) {
+            now = phase.getStartAt().plusMinutes(1);
+        }
+        LocalDateTime oldStart = phase.getStartAt();
+        LocalDateTime oldEnd = phase.getEndAt();
+        phase.setEndAt(now);
         phaseMapper.updateById(phase);
+        syncBatch(phase, oldStart, oldEnd);
         refreshStatuses();
+    }
+
+    /* ---------------- 补录批次与三段的时间联动 ---------------- */
+
+    private static final String BATCH_CODE = "SUPPLEMENT";
+    private static final List<String> ROUND_CHILD_CODES = List.of("INTERVIEW", "CONFIRM");
+
+    /**
+     * 维持「批次窗口包住三段」的不变式：
+     * 改录取批次 → 该轮面试与确认按原时间比例缩放；改这两段 → 录取窗口自动扩展以包住新范围。
+     */
+    private void syncBatch(SelectionPhase phase, LocalDateTime oldStart, LocalDateTime oldEnd) {
+        if (phase.getRoundNo() == null || oldStart == null || oldEnd == null) {
+            return;
+        }
+        if (BATCH_CODE.equals(phase.getCode())) {
+            rescaleChildren(phase.getRoundNo(), oldStart, oldEnd, phase.getStartAt(), phase.getEndAt());
+        } else if (ROUND_CHILD_CODES.contains(phase.getCode())) {
+            expandBatch(phase.getRoundNo());
+        }
+    }
+
+    private List<SelectionPhase> roundChildren(Integer round) {
+        return phaseMapper.selectList(new QueryWrapper<SelectionPhase>()
+                .eq("round_no", round)
+                .in("code", ROUND_CHILD_CODES)
+                .orderByAsc("seq"));
+    }
+
+    private void rescaleChildren(Integer round, LocalDateTime oldStart, LocalDateTime oldEnd,
+                                 LocalDateTime newStart, LocalDateTime newEnd) {
+        long oldSpan = Duration.between(oldStart, oldEnd).getSeconds();
+        long newSpan = Duration.between(newStart, newEnd).getSeconds();
+        if (oldSpan <= 0 || newSpan <= 0) {
+            return;
+        }
+        for (SelectionPhase child : roundChildren(round)) {
+            long offsetStart = Duration.between(oldStart, child.getStartAt()).getSeconds();
+            long offsetEnd = Duration.between(oldStart, child.getEndAt()).getSeconds();
+            LocalDateTime start = newStart.plusSeconds(
+                    Math.max(0, Math.min(newSpan, Math.round(offsetStart * (double) newSpan / oldSpan))));
+            LocalDateTime end = newStart.plusSeconds(
+                    Math.max(0, Math.min(newSpan, Math.round(offsetEnd * (double) newSpan / oldSpan))));
+            if (!end.isAfter(start)) {
+                end = start.plusMinutes(1);
+            }
+            if (end.isAfter(newEnd)) {
+                end = newEnd;
+                if (!end.isAfter(start)) {
+                    start = end.minusMinutes(1);
+                }
+            }
+            child.setStartAt(start);
+            child.setEndAt(end);
+            phaseMapper.updateById(child);
+        }
+    }
+
+    private void expandBatch(Integer round) {
+        List<SelectionPhase> children = roundChildren(round);
+        if (children.isEmpty()) {
+            return;
+        }
+        LocalDateTime start = children.stream().map(SelectionPhase::getStartAt).min(LocalDateTime::compareTo).orElse(null);
+        LocalDateTime end = children.stream().map(SelectionPhase::getEndAt).max(LocalDateTime::compareTo).orElse(null);
+        if (start == null || end == null) {
+            return;
+        }
+        SelectionPhase batch = phaseMapper.selectOne(new QueryWrapper<SelectionPhase>()
+                .eq("code", BATCH_CODE).eq("round_no", round));
+        if (batch == null) {
+            return;
+        }
+        boolean changed = false;
+        if (batch.getStartAt().isAfter(start)) {
+            batch.setStartAt(start);
+            changed = true;
+        }
+        if (batch.getEndAt().isBefore(end)) {
+            batch.setEndAt(end);
+            changed = true;
+        }
+        if (changed) {
+            phaseMapper.updateById(batch);
+        }
     }
 
     public void setRound(Integer round) {

@@ -136,25 +136,29 @@ public class DemoDataInitializer implements ApplicationRunner {
                 "导师与实训室介绍，只读阶段");
         phase("OPEN_DAY", "开放日", 2, null, base.minusDays(7), LocalTime.of(8, 0), base.minusDays(4), LocalTime.of(18, 0),
                 "线下参观实训室，只读阶段");
+        phase("SUPPLEMENT", "第一轮录取", 6, 1, base.plusDays(3), LocalTime.of(8, 0), base.plusDays(8), LocalTime.of(12, 0),
+                "本轮录取总窗口，覆盖面试与拟录取确认");
         phase("APPLY", "意向填报", 3, 1, base.minusDays(2), LocalTime.of(8, 0), base.plusDays(2), LocalTime.of(22, 0),
                 "最多 3 个平行志愿，可勾选是否服从调剂");
         phase("INTERVIEW", "面试与初选", 4, 1, base.plusDays(3), LocalTime.of(8, 0), base.plusDays(6), LocalTime.of(18, 0),
                 "导师录入成绩并标记拟录取/递补/淘汰");
         phase("CONFIRM", "拟录取确认", 5, 1, base.plusDays(7), LocalTime.of(8, 0), base.plusDays(8), LocalTime.of(12, 0),
                 "学生确认 Offer，超时视为放弃");
-        phase("SUPPLEMENT", "分轮补录", 6, null, base.plusDays(9), LocalTime.of(8, 0), base.plusDays(22), LocalTime.of(18, 0),
-                "未录满的导师与未录取的学生重新走填报-面试-录取");
-        phase("APPLY", "意向填报", 6, 2, base.plusDays(9), LocalTime.of(8, 0), base.plusDays(11), LocalTime.of(22, 0),
+        phase("SUPPLEMENT", "第二轮录取", 6, 2, base.plusDays(12), LocalTime.of(8, 0), base.plusDays(16), LocalTime.of(12, 0),
+                "本轮录取总窗口，覆盖面试与拟录取确认");
+        phase("APPLY", "意向填报", 3, 2, base.plusDays(9), LocalTime.of(8, 0), base.plusDays(11), LocalTime.of(22, 0),
                 "第 2 轮补录填报");
-        phase("INTERVIEW", "面试与初选", 6, 2, base.plusDays(12), LocalTime.of(8, 0), base.plusDays(14), LocalTime.of(18, 0),
+        phase("INTERVIEW", "面试与初选", 4, 2, base.plusDays(12), LocalTime.of(8, 0), base.plusDays(14), LocalTime.of(18, 0),
                 "第 2 轮面试");
-        phase("CONFIRM", "拟录取确认", 6, 2, base.plusDays(15), LocalTime.of(8, 0), base.plusDays(16), LocalTime.of(12, 0),
+        phase("CONFIRM", "拟录取确认", 5, 2, base.plusDays(15), LocalTime.of(8, 0), base.plusDays(16), LocalTime.of(12, 0),
                 "第 2 轮确认");
-        phase("APPLY", "意向填报", 6, 3, base.plusDays(17), LocalTime.of(8, 0), base.plusDays(18), LocalTime.of(22, 0),
+        phase("SUPPLEMENT", "第三轮录取", 6, 3, base.plusDays(19), LocalTime.of(8, 0), base.plusDays(22), LocalTime.of(12, 0),
+                "本轮录取总窗口，覆盖面试与拟录取确认");
+        phase("APPLY", "意向填报", 3, 3, base.plusDays(17), LocalTime.of(8, 0), base.plusDays(18), LocalTime.of(22, 0),
                 "第 3 轮补录填报");
-        phase("INTERVIEW", "面试与初选", 6, 3, base.plusDays(19), LocalTime.of(8, 0), base.plusDays(20), LocalTime.of(18, 0),
+        phase("INTERVIEW", "面试与初选", 4, 3, base.plusDays(19), LocalTime.of(8, 0), base.plusDays(20), LocalTime.of(18, 0),
                 "第 3 轮面试");
-        phase("CONFIRM", "拟录取确认", 6, 3, base.plusDays(21), LocalTime.of(8, 0), base.plusDays(22), LocalTime.of(12, 0),
+        phase("CONFIRM", "拟录取确认", 5, 3, base.plusDays(21), LocalTime.of(8, 0), base.plusDays(22), LocalTime.of(12, 0),
                 "第 3 轮确认");
         phase("ADJUST", "统筹调剂", 7, null, base.plusDays(23), LocalTime.of(8, 0), base.plusDays(25), LocalTime.of(18, 0),
                 "室内调剂 → 全院调剂 → 人工兜底");

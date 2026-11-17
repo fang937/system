@@ -142,6 +142,16 @@ public class StudentService {
             throw new BizException("你已被录取，不能再修改志愿");
         }
 
+        // 还在等结果的学生（待确认拟录取 / 递补候补）不进入后续轮次，避免一人占两个位置
+        Integer inProgress = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM interview_results
+                 WHERE student_id = ?
+                   AND (offer_status = 2 OR (offer_status = 1 AND confirm_status = 0))
+                """, Integer.class, studentId);
+        if (inProgress != null && inProgress > 0) {
+            throw new BizException("你仍持有待确认的拟录取或递补资格，不能再参与后续轮次填报");
+        }
+
         List<Long> ids = new ArrayList<>(unique);
         Application application = applicationMapper.selectOne(new QueryWrapper<Application>()
                 .eq("student_id", studentId)

@@ -148,8 +148,8 @@ const STEPS = [
   {
     code: 'SUPPLEMENT',
     seq: 6,
-    title: '分轮补录',
-    desc: '学院公布剩余名额，未录取学生重新填报志愿；实训室统一组织面试、双向确认与顺位递补，依次完成第二轮和第三轮补录。'
+    title: '分轮录取',
+    desc: '本轮录取总窗口，覆盖面试与拟录取确认两段：实训室统一组织面试，导师给出拟录取、递补或淘汰，学生完成双向确认与顺位递补。三个轮次各自独立计时，由管理员分别配置。'
   },
   {
     code: 'ADJUST',
@@ -177,6 +177,7 @@ const steps = computed(() =>
     const state = hit?.state || 'PENDING'
     return {
       ...step,
+      title: hit?.name || step.title,
       startAt: hit?.startAt,
       endAt: hit?.endAt,
       roundNo: hit?.roundNo,

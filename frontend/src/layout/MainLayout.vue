@@ -204,6 +204,7 @@ const MENUS = [
     items: [
       { path: '/admin/dashboard', label: '全局看板', icon: 'Odometer' },
       { path: '/admin/phases', label: '阶段与轮次', icon: 'SetUp' },
+      { path: '/admin/students', label: '学生名册', icon: 'User' },
       { path: '/admin/tutors', label: '导师与实训室', icon: 'OfficeBuilding' },
       { path: '/admin/adjust', label: '统筹调剂', icon: 'Sort' },
       { path: '/admin/report', label: '结果公示', icon: 'Files' }

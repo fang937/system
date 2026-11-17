@@ -82,11 +82,18 @@ public class PhaseService {
      * 调用方（{@code AdminService.resetAll}）负责在同一事务里清理志愿与面试数据。</p>
      */
     public void resetTimeline() {
-        List<SelectionPhase> phases = list();
+        Map<String, SelectionPhase> index = new LinkedHashMap<>();
+        for (SelectionPhase phase : list()) {
+            index.put(timelineKey(phase.getCode(), phase.getRoundNo()), phase);
+        }
         LocalDateTime now = LocalDateTime.now().withNano(0).minusMinutes(1);
         LocalDateTime cursor = now;
         boolean first = true;
-        for (SelectionPhase phase : phases) {
+        for (String key : TIMELINE_ORDER) {
+            SelectionPhase phase = index.get(key);
+            if (phase == null) {
+                continue;
+            }
             Duration duration = Duration.between(phase.getStartAt(), phase.getEndAt());
             if (duration.isNegative() || duration.isZero() || duration.compareTo(Duration.ofHours(1)) < 0) {
                 duration = Duration.ofDays(1);
@@ -100,7 +107,46 @@ public class PhaseService {
             cursor = end;
             first = false;
         }
+        syncSupplementBatches();
         setCurrentRound(1);
+    }
+
+    /**
+     * 重置时的实际推进顺序。stage 序号只是流程图的分类编号（三轮填报同为 3），
+     * 不再承载先后关系，因此这里显式列出时间轴顺序：每轮 填报 → 面试 → 确认。
+     */
+    private static final List<String> TIMELINE_ORDER = List.of(
+            BRIEFING + "#-", OPEN_DAY + "#-",
+            APPLY + "#1", INTERVIEW + "#1", CONFIRM + "#1",
+            APPLY + "#2", INTERVIEW + "#2", CONFIRM + "#2",
+            APPLY + "#3", INTERVIEW + "#3", CONFIRM + "#3",
+            ADJUST + "#-", PUBLISH + "#-");
+
+    private static String timelineKey(String code, Integer round) {
+        return code + "#" + (round == null ? "-" : round);
+    }
+
+    /** 录取批次的时间窗始终等于该轮「面试-确认」两段的包络。 */
+    public void syncSupplementBatches() {
+        for (SelectionPhase batch : list().stream()
+                .filter(p -> SUPPLEMENT.equals(p.getCode()) && p.getRoundNo() != null)
+                .toList()) {
+            List<SelectionPhase> children = list().stream()
+                    .filter(p -> batch.getRoundNo().equals(p.getRoundNo()))
+                    .filter(p -> INTERVIEW.equals(p.getCode()) || CONFIRM.equals(p.getCode()))
+                    .toList();
+            if (children.isEmpty()) {
+                continue;
+            }
+            LocalDateTime start = children.stream().map(SelectionPhase::getStartAt).min(LocalDateTime::compareTo).orElse(null);
+            LocalDateTime end = children.stream().map(SelectionPhase::getEndAt).max(LocalDateTime::compareTo).orElse(null);
+            if (start == null || end == null) {
+                continue;
+            }
+            batch.setStartAt(start);
+            batch.setEndAt(end);
+            phaseMapper.updateById(batch);
+        }
     }
 
     public List<SelectionPhase> list() {
@@ -206,8 +252,12 @@ public class PhaseService {
         return map;
     }
 
+    /**
+     * 与轮次绑定的阶段：填报、面试、确认，以及每个轮次的补录批次。
+     * 补录批次的时间窗是该轮三段的包络，同样按当前轮次校验。
+     */
     public static boolean isRoundScoped(String code) {
-        return APPLY.equals(code) || INTERVIEW.equals(code) || CONFIRM.equals(code);
+        return APPLY.equals(code) || INTERVIEW.equals(code) || CONFIRM.equals(code) || SUPPLEMENT.equals(code);
     }
 
     public static String phaseLabel(String code) {

@@ -386,9 +386,13 @@ public class WorkbenchService {
                 """, labId, round);
     }
 
-    /** 室内调剂候选：报过本室但至今未被任何导师录取的学生。 */
+    /**
+     * 室内调剂候选：本轮报过本室、至今未被任何导师录取、且服从实训室内调剂的学生。
+     * 已经持有待确认拟录取或递补资格的学生不在此列——他们并未落榜。
+     */
     public List<Map<String, Object>> labPool() {
         Long labId = labId();
+        int round = phaseService.currentRound();
         return jdbc.queryForList("""
                 SELECT u.id AS studentId, u.name AS studentName, u.student_no AS studentNo,
                        sp.major, sp.class_name AS className, sp.gpa, sp.priority_score AS priorityScore,
@@ -398,10 +402,15 @@ public class WorkbenchService {
                   JOIN users u ON u.id = a.student_id
                   LEFT JOIN student_profiles sp ON sp.user_id = a.student_id
                  WHERE a.final_tutor_id IS NULL
+                   AND a.round_no = ?
+                   AND a.accept_lab_adjust = 1
+                   AND NOT EXISTS (SELECT 1 FROM interview_results r
+                                    WHERE r.student_id = a.student_id
+                                      AND (r.offer_status = 2 OR (r.offer_status = 1 AND r.confirm_status = 0)))
                    AND EXISTS (SELECT 1 FROM tutors t WHERE t.lab_id = ?
                                 AND (t.id = a.tutor_1_id OR t.id = a.tutor_2_id OR t.id = a.tutor_3_id))
                  ORDER BY sp.priority_score DESC, sp.gpa DESC
-                """, labId);
+                """, round, labId);
     }
 
     /** 本室可接收调剂的导师（还有剩余名额）。 */
@@ -430,6 +439,21 @@ public class WorkbenchService {
                 Integer.class, studentId);
         if (matched != null && matched > 0) {
             throw new BizException("该学生已被录取，无需调剂");
+        }
+        Integer inProgress = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM interview_results
+                 WHERE student_id = ?
+                   AND (offer_status = 2 OR (offer_status = 1 AND confirm_status = 0))
+                """, Integer.class, studentId);
+        if (inProgress != null && inProgress > 0) {
+            throw new BizException("该学生仍有待确认的拟录取或递补资格，不能重复安置");
+        }
+        Integer acceptLab = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM applications
+                 WHERE student_id = ? AND accept_lab_adjust = 1 AND final_tutor_id IS NULL
+                """, Integer.class, studentId);
+        if (acceptLab == null || acceptLab == 0) {
+            throw new BizException("该学生不服从实训室内调剂，不能在此安置");
         }
         int rows = tutorMapper.takeQuota(tutorId);
         if (rows != 1) {

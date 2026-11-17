@@ -32,6 +32,7 @@ const routes = [
       // 管理端
       { path: 'admin/dashboard', component: () => import('../views/admin/Dashboard.vue'), meta: { caps: ['ADMIN'], title: '全局看板' } },
       { path: 'admin/phases', component: () => import('../views/admin/Phases.vue'), meta: { caps: ['ADMIN'], title: '阶段与轮次' } },
+      { path: 'admin/students', component: () => import('../views/admin/Students.vue'), meta: { caps: ['ADMIN'], title: '学生名册' } },
       { path: 'admin/tutors', component: () => import('../views/admin/Tutors.vue'), meta: { caps: ['ADMIN'], title: '导师与实训室' } },
       { path: 'admin/adjust', component: () => import('../views/admin/Adjust.vue'), meta: { caps: ['ADMIN'], title: '统筹调剂' } },
       { path: 'admin/report', component: () => import('../views/admin/Report.vue'), meta: { caps: ['ADMIN'], title: '结果公示' } },

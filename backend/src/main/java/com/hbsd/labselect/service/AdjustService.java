@@ -56,6 +56,9 @@ public class AdjustService {
                   JOIN users u ON u.id = a.student_id
                   LEFT JOIN student_profiles sp ON sp.user_id = a.student_id
                  WHERE a.round_no = ? AND a.final_tutor_id IS NULL
+                   AND NOT EXISTS (SELECT 1 FROM interview_results r
+                                    WHERE r.student_id = a.student_id
+                                      AND (r.offer_status = 2 OR (r.offer_status = 1 AND r.confirm_status = 0)))
                  ORDER BY sp.priority_score DESC, sp.gpa DESC, u.id
                 """, round);
     }
@@ -139,6 +142,14 @@ public class AdjustService {
                 Integer.class, studentId);
         if (matched != null && matched > 0) {
             throw new BizException("该学生已被录取");
+        }
+        Integer inProgress = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM interview_results
+                 WHERE student_id = ?
+                   AND (offer_status = 2 OR (offer_status = 1 AND confirm_status = 0))
+                """, Integer.class, studentId);
+        if (inProgress != null && inProgress > 0) {
+            throw new BizException("该学生仍有待确认的拟录取或递补资格，不能重复安置");
         }
         Map<String, Object> tutor = jdbc.queryForMap("""
                 SELECT t.id AS tutorId, u.name AS tutorName, l.name AS labName, t.remaining_quota AS remainingQuota
