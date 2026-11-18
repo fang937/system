@@ -342,12 +342,22 @@ const currentPortal = computed(() => portals.find((item) => item.key === portal.
 
 const demoAccounts = {
   STUDENT: [
-    { role: '学生（空志愿）', username: '2023001', name: '林晓' },
-    { role: '学生（已填志愿）', username: '2023002', name: '陈子昂' },
-    { role: '学生（已面试待处置）', username: '2023903', name: '顾辰' },
-    { role: '学生（2 个 Offer）', username: '2023904', name: '沈雨薇' },
-    { role: '学生（3 个 Offer）', username: '2023913', name: '秦书瑶' },
-    { role: '学生（已录取）', username: '2023907', name: '韩清和' }
+    { role: '学生（空志愿）', username: '2023001', name: '灭桂芬' },
+    { role: '学生（已填志愿）', username: '2023002', name: '灭国栋' },
+    { role: '学生（已填志愿）', username: '2023003', name: '灭翠花' },
+    { role: '学生（已填志愿）', username: '2023004', name: '灭大军' },
+    { role: '学生（已填志愿）', username: '2023005', name: '灭桂花' },
+    { role: '学生（已填志愿）', username: '2023006', name: '灭火器' },
+    { role: '学生（已填志愿）', username: '2023007', name: '灭远志' },
+    { role: '学生（已填志愿）', username: '2023008', name: '灭秀兰' },
+    { role: '学生（未填报）', username: '2023901', name: '灭玉英' },
+    { role: '学生（已填志愿）', username: '2023902', name: '灭蚊拍' },
+    { role: '学生（已面试待处置）', username: '2023903', name: '灭莲花' },
+    { role: '学生（2 个 Offer）', username: '2023904', name: '灭大春' },
+    { role: '学生（递补第 1 顺位）', username: '2023905', name: '灭国伟' },
+    { role: '学生（已淘汰）', username: '2023906', name: '灭霸' },
+    { role: '学生（已录取）', username: '2023907', name: '灭志强' },
+    { role: '学生（有简历草稿）', username: '2023908', name: '灭春梅' }
   ],
   TUTOR: [
     { role: '202 负责人', username: 'liuguanjun', name: '刘冠军' },
