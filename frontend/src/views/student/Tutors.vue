@@ -18,7 +18,7 @@
         当前阶段为：
         <template v-for="(phase, index) in activePhases" :key="phase.id || phase.code + (phase.roundNo ?? '')">
           <span v-if="index > 0" class="phase-sep">；</span>
-          <span class="phase-name">{{ phase.name }}</span>
+          <span class="phase-name">{{ phaseLabel(phase) }}</span>
           <span class="muted phase-window">
             {{ fmtTime(phase.startAt) }} ~ {{ fmtTime(phase.endAt) }}
           </span>
@@ -251,16 +251,16 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../../api/index.js'
 import { useUserStore } from '../../stores/user.js'
-import { fmtTime } from '../../utils/labels.js'
+import { fmtTime, phaseLabel } from '../../utils/labels.js'
 import { labTone } from '../../utils/tones.js'
 import AiAvatarDrawer from '../../components/AiAvatarDrawer.vue'
 import SelectionTimeline from '../../components/SelectionTimeline.vue'
 
 const router = useRouter()
 const store = useUserStore()
-/** 并行阶段：同一时间窗内可能有多条，全部列出避免只看到一个 */
+/** 并行阶段：同一时间窗内可能有多条，全部列出避免只看到一个；轮次阶段只取当前轮次 */
 const activePhases = computed(() =>
-  (store.phase?.phases || [])
+  store.roundPhases
     .filter((phase) => phase.state === 'ACTIVE')
     .slice()
     .sort((a, b) => (a.seq || 0) - (b.seq || 0) || (a.roundNo || 0) - (b.roundNo || 0))

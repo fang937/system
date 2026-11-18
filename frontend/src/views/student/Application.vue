@@ -5,7 +5,7 @@
         <h2>我的志愿</h2>
         <p>最多填报 3 个平行志愿，不分先后；同时勾选是否服从实训室内调剂与全院调剂。</p>
       </div>
-      <el-tag v-if="round" size="large" effect="plain">第 {{ round }} 轮</el-tag>
+      <el-tag v-if="stageLabel" size="large" effect="plain">{{ stageLabel }}</el-tag>
     </div>
 
     <el-alert v-if="!editable" :closable="false" :type="hasApplication ? 'success' : 'warning'" show-icon>
@@ -13,11 +13,14 @@
         <template v-if="!applyWindow">
           当前没有进行中的填报阶段，无法提交志愿。
         </template>
-        <template v-else-if="applyWindow.state === 'PENDING'">
+        <template v-else-if="applyState === 'PENDING'">
           填报尚未开始：{{ fmtTime(applyWindow.startAt) }} 开放，{{ fmtTime(applyWindow.endAt) }} 截止。
         </template>
-        <template v-else-if="applyWindow.state === 'CLOSED'">
+        <template v-else-if="applyState === 'CLOSED'">
           本阶段已结束（{{ fmtTime(applyWindow.endAt) }} 截止），志愿已锁定。
+        </template>
+        <template v-else-if="application?.status === 'MATCHED'">
+          本轮志愿已录取锁定，无需再修改。
         </template>
       </template>
     </el-alert>
@@ -25,8 +28,8 @@
     <el-alert v-if="editable" :closable="false" type="success" show-icon>
       <template #title>
         填报进行中，截止 {{ fmtTime(applyWindow.endAt) }}，
-        <span class="time-left" :class="{ urgent: isUrgent(applyWindow.endAt) }">
-          剩余 {{ countdown(applyWindow.endAt) }}
+        <span class="time-left" :class="{ urgent: isUrgent(applyWindow.endAt, now) }">
+          剩余 {{ countdown(applyWindow.endAt, now) }}
         </span>
       </template>
     </el-alert>
@@ -195,12 +198,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { api } from '../../api/index.js'
 import { useUserStore } from '../../stores/user.js'
-import { applicationStatusMap, countdown, fmtTime, isUrgent } from '../../utils/labels.js'
+import { applicationStatusMap, countdown, currentStageLabel, fmtTime, isUrgent, toTimestamp } from '../../utils/labels.js'
 import { labTone } from '../../utils/tones.js'
 import SelectionTimeline from '../../components/SelectionTimeline.vue'
 
@@ -209,7 +212,8 @@ const router = useRouter()
 
 const loading = ref(false)
 const saving = ref(false)
-const round = ref(1)
+// 轮次以 store 的最新值为初值，避免进入第 2/3 轮时先闪一帧「第 1 轮」
+const round = ref(store.currentRound || 1)
 const applyWindow = ref(null)
 const application = ref(null)
 const choices = ref([])
@@ -223,8 +227,37 @@ const tipLoading = ref(false)
 const tipEngine = ref('')
 const tipError = ref(null)
 
+/** 定时推进的时钟：剩余时间、不足 1 小时的红色状态随它更新 */
+const now = ref(Date.now())
+let ticker = null
+
 const hasApplication = computed(() => Boolean(application.value))
-const editable = computed(() => applyWindow.value?.state === 'ACTIVE' && application.value?.status !== 'MATCHED')
+
+/**
+ * 顶部环节徽标：三轮结束后进入统筹调剂 / 结果公示时显示阶段名，
+ * 否则显示「第 N 轮」。round.current 在收尾阶段仍停留在 3，不能直接拿来展示。
+ */
+const stageLabel = computed(() => currentStageLabel(store.phase?.phases, round.value))
+
+/**
+ * 填报窗口状态按本地时钟实时判定。
+ * 后端返回的 state 只是加载那一刻的快照，页面长时间停留或跨过截止点后会失真；
+ * 这里以起止时间为准，保证「进行中 / 未开始 / 已结束」与剩余时间始终一致。
+ */
+const applyState = computed(() => {
+  const win = applyWindow.value
+  if (!win) return null
+  const start = toTimestamp(win.startAt)
+  const end = toTimestamp(win.endAt)
+  if (Number.isNaN(start) || Number.isNaN(end)) return win.state || null
+  if (now.value < start) return 'PENDING'
+  if (now.value > end) return 'CLOSED'
+  return 'ACTIVE'
+})
+
+const editable = computed(
+  () => applyState.value === 'ACTIVE' && application.value?.status !== 'MATCHED'
+)
 
 const labs = computed(() => {
   const map = new Map()
@@ -267,10 +300,15 @@ function reset() {
   selected.value = []
 }
 
+let loadSeq = 0
+
 async function load() {
+  // 轮次切换可能连续触发多次加载，只认最后一次的结果，避免旧轮次数据覆盖新轮次
+  const seq = ++loadSeq
   loading.value = true
   try {
     const [app, list] = await Promise.all([api.myApplication(), api.studentTutors()])
+    if (seq !== loadSeq) return
     round.value = app.round
     applyWindow.value = app.applyWindow
     application.value = app.application
@@ -281,11 +319,12 @@ async function load() {
       acceptLab.value = app.application.acceptLabAdjust === 1
       acceptGlobal.value = app.application.acceptGlobalAdjust === 1
     } else {
+      selected.value = []
       acceptLab.value = true
       acceptGlobal.value = false
     }
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 
@@ -308,7 +347,8 @@ async function runTips() {
   }
 }
 
-async function submit() {  if (!selected.value.length) {
+async function submit() {
+  if (!selected.value.length) {
     ElMessage.warning('请至少选择 1 个志愿')
     return
   }
@@ -327,7 +367,28 @@ async function submit() {  if (!selected.value.length) {
   }
 }
 
-onMounted(load)
+/**
+ * 轮次切换同步：管理员在阶段配置页切到第 2/3 轮后，
+ * 本页的轮次标签、填报窗口、剩余时间与时间轴都要跟着换到新轮次。
+ */
+watch(
+  () => store.currentRound,
+  (roundNo) => {
+    if (roundNo && Number(roundNo) !== Number(round.value)) load()
+  }
+)
+
+onMounted(() => {
+  load()
+  // 10 秒一跳：剩余时间精确到分钟，足够让倒计时与「不足 1 小时」的红色状态及时更新
+  ticker = setInterval(() => {
+    now.value = Date.now()
+  }, 10000)
+})
+
+onBeforeUnmount(() => {
+  clearInterval(ticker)
+})
 </script>
 
 <style scoped>

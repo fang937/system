@@ -71,6 +71,7 @@
               class="pb-seg"
               :class="{ urgent: isUrgent(phase.endAt, now) }"
             >
+              <span v-if="phase.roundNo" class="pb-round">第 {{ phase.roundNo }} 轮</span>
               <span class="pb-name">{{ phase.name }}</span>
               <span class="pb-count" :class="{ urgent: isUrgent(phase.endAt, now) }">
                 <el-icon v-if="isUrgent(phase.endAt, now)" class="pb-alert"><WarningFilled /></el-icon>
@@ -147,7 +148,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { WarningFilled } from '@element-plus/icons-vue'
 import { api } from '../api/index.js'
 import { useUserStore } from '../stores/user.js'
-import { countdown, countdownClock, isUrgent } from '../utils/labels.js'
+import { countdown, countdownClock, isUrgent, phaseLabel, TAIL_PHASE_CODES } from '../utils/labels.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -232,19 +233,30 @@ watch(
   () => route.path,
   () => {
     drawer.value = false
+    // 切页时顺带刷新阶段：管理员刚切换轮次/调整窗口后，进入填报页即可看到最新轮次
+    if (store.isLogin) store.refreshPhase()
   }
 )
 watch(drawer, (open) => {
   document.body.style.overflow = open ? 'hidden' : ''
 })
 
-/** 并行阶段：直接取后端返回的全部 ACTIVE 阶段，按业务顺序排列 */
-const activePhases = computed(() =>
-  (store.phase?.phases || [])
-    .filter((phase) => phase.state === 'ACTIVE')
-    .slice()
-    .sort((a, b) => (a.seq || 0) - (b.seq || 0) || (a.roundNo || 0) - (b.roundNo || 0))
-)
+/**
+ * 并行阶段：只取「当前轮次」的 ACTIVE 阶段（全局阶段不限轮次），按业务顺序排列。
+ * 收尾阶段（统筹调剂 / 结果公示）进行中时排在最前：三轮已结束，
+ * 它的窗口若与末轮阶段重叠，不应让「第三轮录取」占据首屏。
+ */
+const activePhases = computed(() => {
+  const list = store.roundPhases.filter((phase) => phase.state === 'ACTIVE').slice()
+  const tailFirst = list.some((phase) => TAIL_PHASE_CODES.includes(phase.code))
+  return list.sort((a, b) => {
+    if (tailFirst) {
+      const diff = (TAIL_PHASE_CODES.includes(b.code) ? 1 : 0) - (TAIL_PHASE_CODES.includes(a.code) ? 1 : 0)
+      if (diff !== 0) return diff
+    }
+    return (a.seq || 0) - (b.seq || 0) || (a.roundNo || 0) - (b.roundNo || 0)
+  })
+})
 
 const phaseState = computed(() => (activePhases.value.length ? 'active' : 'none'))
 
@@ -260,7 +272,9 @@ function measurePhaseBar() {
 
 const phaseTitle = computed(() =>
   activePhases.value.length
-    ? activePhases.value.map((phase) => `${phase.name} 剩余 ${countdown(phase.endAt, now.value)}`).join('，')
+    ? activePhases.value
+        .map((phase) => `${phaseLabel(phase)} 剩余 ${countdown(phase.endAt, now.value)}`)
+        .join('，')
     : ''
 )
 
@@ -275,6 +289,13 @@ async function loadNotices() {
   } catch {
     /* 通知加载失败不影响主流程 */
   }
+}
+
+/** 回到页面时拉一次最新阶段，避免管理员切换轮次后顶部仍停在旧轮次 */
+function onVisibilityChange() {
+  if (document.visibilityState !== 'visible') return
+  store.refreshPhase()
+  loadNotices()
 }
 
 async function readAll() {
@@ -303,6 +324,7 @@ onMounted(async () => {
     barObserver.observe(phaseBar.value)
   }
   window.addEventListener('resize', measurePhaseBar)
+  document.addEventListener('visibilitychange', onVisibilityChange)
   loadNotices()
   timer = setInterval(() => {
     now.value = Date.now()
@@ -318,6 +340,7 @@ onBeforeUnmount(() => {
   clearInterval(poller)
   barObserver?.disconnect()
   window.removeEventListener('resize', measurePhaseBar)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
   document.body.style.overflow = ''
 })
 </script>
@@ -659,6 +682,18 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+/* 轮次阶段：名称前挂一枚「第 N 轮」胶囊，避免多轮同名阶段被误读 */
+.phase-bar .pb-round {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 0, 0, 0.06);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 .phase-bar .pb-count {
   display: inline-flex;
   align-items: center;
@@ -670,6 +705,10 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-pill);
   background: rgba(0, 0, 0, 0.06);
   white-space: nowrap;
+}
+
+.phase-bar.active .pb-round {
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .phase-bar.active {
@@ -1159,6 +1198,17 @@ onBeforeUnmount(() => {
   font-size: 12.5px;
   font-weight: 700;
   letter-spacing: -0.01em;
+}
+
+.phase-bar .pb-round {
+  background: rgba(28, 111, 102, 0.07);
+  color: var(--ink-600);
+  font-size: 10px;
+}
+
+.phase-bar.active .pb-round {
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
 }
 
 .phase-bar .pb-idle {

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { api } from '../api/index.js'
+import { isRoundScoped } from '../utils/labels.js'
 
 const CAP_HOME = {
   STUDENT: '/student/tutors',
@@ -31,6 +32,19 @@ export const useUserStore = defineStore('user', {
     },
     currentPhase: (state) => state.phase?.phase || null,
     currentRound: (state) => state.phase?.round || 1,
+    /**
+     * 与当前轮次匹配的阶段：轮次相关的阶段（填报/面试/确认/录取）只保留当前轮次那一份，
+     * 全局阶段（宣讲/开放日/调剂/公示）原样保留。
+     *
+     * 顶部阶段条与「当前阶段」提示都必须用它，不能再直接遍历 phases：
+     * 各轮时间窗可能重叠，否则切到第 2、3 轮后仍会把第 1 轮的同名阶段排在前面。
+     */
+    roundPhases: (state) => {
+      const round = state.phase?.round
+      return (state.phase?.phases || []).filter(
+        (p) => !isRoundScoped(p.code) || Number(p.roundNo) === Number(round)
+      )
+    },
     /**
      * 指定阶段当前是否开放。
      * 阶段时间窗可能重叠，不能只看 currentPhase（它只取业务顺序最大的那条），

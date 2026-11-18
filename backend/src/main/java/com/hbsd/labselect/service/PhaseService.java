@@ -158,11 +158,17 @@ public class PhaseService {
     /**
      * 当前生效阶段：取包含当前时间、业务顺序最大的那一条；
      * 同顺序时优先取轮次更具体的那一条（覆盖全局阶段）。
+     *
+     * <p>轮次相关阶段（填报/面试/确认/录取）只认当前轮次：各轮时间窗可能重叠，
+     * 若把上一轮仍在窗口内的阶段算进来，顶栏与「当前阶段」提示会显示成上一轮。</p>
      */
     public Optional<SelectionPhase> active() {
         LocalDateTime now = LocalDateTime.now();
+        int round = currentRound();
         return list().stream()
                 .filter(p -> !now.isBefore(p.getStartAt()) && !now.isAfter(p.getEndAt()))
+                .filter(p -> !isRoundScoped(p.getCode())
+                        || (p.getRoundNo() != null && p.getRoundNo() == round))
                 .max(Comparator.comparing(SelectionPhase::getSeq)
                         .thenComparing(p -> p.getRoundNo() == null ? 0 : p.getRoundNo()));
     }

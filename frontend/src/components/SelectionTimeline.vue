@@ -100,7 +100,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Clock, InfoFilled, WarningFilled } from '@element-plus/icons-vue'
-import { countdown, fmtTime, isUrgent, phaseStateMap } from '../utils/labels.js'
+import { countdown, fmtTime, isRoundScoped, isUrgent, phaseStateMap } from '../utils/labels.js'
 
 const props = defineProps({
   // /api/meta/phase 返回的 phases（含轮次展开的所有阶段）
@@ -169,11 +169,10 @@ const STEPS = [
 const steps = computed(() =>
   STEPS.map((step) => {
     const list = props.phases.filter((p) => p.code === step.code)
-    const hit =
-      list.find((p) => p.roundNo === null || p.roundNo === undefined) ||
-      list.find((p) => Number(p.roundNo) === Number(props.round)) ||
-      list[0] ||
-      null
+    // 轮次阶段只认当前轮次，绝不回退到其他轮次，避免顶栏/时间轴显示成上一轮
+    const hit = isRoundScoped(step.code)
+      ? list.find((p) => Number(p.roundNo) === Number(props.round)) || null
+      : list.find((p) => p.roundNo === null || p.roundNo === undefined) || null
     const state = hit?.state || 'PENDING'
     return {
       ...step,
