@@ -203,6 +203,12 @@ public class OfferService {
             if (sameStudent != 1) {
                 continue;
             }
+            // 志愿缺失或已有录取记录时跳过：批量任务里单条脏数据不应中断其余学生的自动确认，
+            // 更不能把录取结果写到别的志愿行上。
+            Application application = applicationMapper.selectById(result.getApplicationId());
+            if (application == null || application.getFinalTutorId() != null) {
+                continue;
+            }
             result.setConfirmStatus(1);
             result.setConfirmTime(LocalDateTime.now());
             result.setVersion(result.getVersion() + 1);
@@ -242,12 +248,22 @@ public class OfferService {
         }
     }
 
-    /** 确认成功后把志愿表标记为已录取，学生端「录取结果」以此为准。 */
+    /**
+     * 确认成功后把志愿表标记为已录取，学生端「录取结果」以此为准。
+     *
+     * <p>定位志愿行一律用面试记录上的 application_id，不再按「学生 + 轮次」反查：
+     * 反查会命中同轮的另一条志愿，把录取导师写到该生本轮并未填报的志愿行上。
+     * 更新前校验该志愿尚未被其他导师占用，避免覆盖已有录取状态。</p>
+     */
     private void markApplicationMatched(InterviewResult result) {
-        Application application = applicationMapper.selectOne(new QueryWrapper<Application>()
-                .eq("student_id", result.getStudentId())
-                .eq("round_no", result.getRoundNo()));
+        Application application = applicationMapper.selectById(result.getApplicationId());
         if (application == null) {
+            throw new BizException("志愿记录不存在，无法回写录取结果");
+        }
+        if (application.getFinalTutorId() != null) {
+            if (!application.getFinalTutorId().equals(result.getTutorId())) {
+                throw new BizException("该志愿已被其他导师录取，不能重复确认");
+            }
             return;
         }
         application.setFinalTutorId(result.getTutorId());

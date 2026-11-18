@@ -28,7 +28,7 @@
       <div class="stat tone-blue">
         <div class="label">学生总数</div>
         <div class="value mono">{{ stats.studentCount ?? 0 }}</div>
-        <div class="hint">已提交志愿 {{ stats.submittedCount ?? 0 }}</div>
+        <div class="hint">累计已提交志愿 {{ stats.submittedCount ?? 0 }}</div>
       </div>
       <div class="stat tone-purple">
         <div class="label">总名额</div>
@@ -43,7 +43,7 @@
       <div class="stat tone-green">
         <div class="label">已确认</div>
         <div class="value mono">{{ stats.confirmedCount ?? 0 }}</div>
-        <div class="hint">最终落定 {{ stats.matchedCount ?? 0 }} 人</div>
+        <div class="hint">累计落定 {{ stats.matchedCount ?? 0 }} 人 · 本轮 {{ stats.roundMatchedCount ?? 0 }} 人</div>
       </div>
     </div>
 

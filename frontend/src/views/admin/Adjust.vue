@@ -16,7 +16,7 @@
       <div class="stat">
         <div class="label">待调剂学生</div>
         <div class="value mono">{{ students.length }}</div>
-        <div class="hint">第 {{ round }} 轮未录取</div>
+        <div class="hint">三轮后仍未录取</div>
       </div>
       <div class="stat">
         <div class="label">剩余名额</div>
@@ -149,7 +149,6 @@ const saving = ref(false)
 const running = ref(0)
 const students = ref([])
 const vacancies = ref([])
-const round = ref(store.currentRound || 1)
 const lastResult = ref(null)
 const dialogVisible = ref(false)
 const current = ref(null)
@@ -167,7 +166,6 @@ async function load() {
     const data = await api.adjustPreview()
     students.value = data.students || []
     vacancies.value = data.vacancies || []
-    round.value = data.round || 1
   } finally {
     loading.value = false
   }

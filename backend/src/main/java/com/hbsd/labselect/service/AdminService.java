@@ -60,8 +60,12 @@ public class AdminService {
         map.put("round", round);
         map.put("stats", jdbc.queryForMap("""
                 SELECT (SELECT COUNT(*) FROM users WHERE role = 'STUDENT' AND status = 1)         AS studentCount,
-                       (SELECT COUNT(*) FROM applications WHERE round_no = ?)                     AS submittedCount,
-                       (SELECT COUNT(*) FROM applications WHERE round_no = ? AND final_tutor_id IS NOT NULL) AS matchedCount,
+                       (SELECT COUNT(DISTINCT student_id) FROM applications)                       AS submittedCount,
+                       (SELECT COUNT(DISTINCT student_id) FROM applications
+                         WHERE final_tutor_id IS NOT NULL)                                        AS matchedCount,
+                       (SELECT COUNT(DISTINCT student_id) FROM applications WHERE round_no = ?)    AS roundSubmittedCount,
+                       (SELECT COUNT(DISTINCT student_id) FROM applications
+                         WHERE round_no = ? AND final_tutor_id IS NOT NULL)                       AS roundMatchedCount,
                        (SELECT COALESCE(SUM(quota), 0) FROM tutors WHERE status = 1)               AS totalQuota,
                        (SELECT COALESCE(SUM(remaining_quota), 0) FROM tutors WHERE status = 1)     AS remainingQuota,
                        (SELECT COUNT(*) FROM interview_results WHERE round_no = ? AND offer_status = 1) AS offerCount,
@@ -617,40 +621,69 @@ public class AdminService {
         return v == null || v.isBlank() ? null : v;
     }
 
+    /**
+     * 学生名册。
+     *
+     * <p>「志愿状态」不能只看当前轮次：第 1 轮录取的学生在第 2/3 轮没有志愿行，
+     * 若按当前轮次左连 applications，就会被显示成「未填报」。这里取每个学生的
+     * 「有效志愿行」——已录取优先，其次当前轮次，最后是最近一轮未录取志愿。</p>
+     */
     public List<Map<String, Object>> students() {
         int round = phaseService.currentRound();
         return jdbc.queryForList("""
                 SELECT u.id AS studentId, u.username, u.name AS studentName, u.student_no AS studentNo,
                        sp.major, sp.class_name AS className, sp.grade, sp.gpa,
                        sp.skill_tags AS skillTags, sp.priority_score AS priorityScore,
-                       a.id AS applicationId, a.status AS applicationStatus, a.final_tutor_id AS finalTutorId,
+                       a.id AS applicationId, a.round_no AS appliedRoundNo,
+                       a.status AS applicationStatus, a.final_tutor_id AS finalTutorId,
+                       CASE WHEN a.final_tutor_id IS NOT NULL THEN 1 ELSE 0 END AS matched,
+                       CASE WHEN a.final_tutor_id IS NOT NULL THEN a.round_no END AS matchedRoundNo,
+                       CASE WHEN a.round_no = ? THEN 1 ELSE 0 END AS appliedThisRound,
                        tu.name AS finalTutorName, l.name AS finalLabName
                   FROM users u
                   LEFT JOIN student_profiles sp ON sp.user_id = u.id
-                  LEFT JOIN applications a ON a.student_id = u.id AND a.round_no = ?
+                  LEFT JOIN applications a ON a.id = (
+                        SELECT a2.id FROM applications a2
+                         WHERE a2.student_id = u.id
+                         ORDER BY (a2.final_tutor_id IS NOT NULL) DESC,
+                                  (a2.round_no = ?) DESC, a2.round_no DESC, a2.id DESC
+                         LIMIT 1)
                   LEFT JOIN tutors t ON t.id = a.final_tutor_id
                   LEFT JOIN users tu ON tu.id = t.user_id
                   LEFT JOIN labs l ON l.id = t.lab_id
                  WHERE u.role = 'STUDENT'
                  ORDER BY u.student_no
-                """, round);
+                """, round, round);
     }
 
     /* ---------------- 结果公示与导出 ---------------- */
 
+    /**
+     * 结果公示名单。
+     *
+     * <p>取每个学生「最后一次录取」的志愿行（一名学生最终只会有一条录取记录），
+     * 面试成绩按 application_id + tutor_id 精确关联，避免同一位导师跨轮多次面试时
+     * 产生重复行或取到别轮成绩；调剂方式也只认指向最终导师的那条调剂记录。</p>
+     */
     public List<Map<String, Object>> results() {
         return jdbc.queryForList("""
                 SELECT u.name AS studentName, u.student_no AS studentNo, sp.major, sp.class_name AS className,
                        l.name AS labName, tu.name AS tutorName, t.title,
                        a.round_no AS roundNo, r.score,
-                       (SELECT ar.adjust_type FROM adjust_records ar WHERE ar.student_id = u.id ORDER BY ar.id DESC LIMIT 1) AS adjustType
+                       (SELECT ar.adjust_type FROM adjust_records ar
+                         WHERE ar.student_id = u.id AND ar.to_tutor_id = a.final_tutor_id
+                         ORDER BY ar.id DESC LIMIT 1) AS adjustType
                   FROM applications a
+                  JOIN (SELECT student_id, MAX(round_no) AS round_no
+                          FROM applications WHERE final_tutor_id IS NOT NULL
+                         GROUP BY student_id) m
+                    ON m.student_id = a.student_id AND m.round_no = a.round_no
                   JOIN users u  ON u.id = a.student_id
                   JOIN tutors t ON t.id = a.final_tutor_id
                   JOIN users tu ON tu.id = t.user_id
                   JOIN labs l   ON l.id = t.lab_id
                   LEFT JOIN student_profiles sp ON sp.user_id = u.id
-                  LEFT JOIN interview_results r ON r.student_id = u.id AND r.tutor_id = a.final_tutor_id
+                  LEFT JOIN interview_results r ON r.application_id = a.id AND r.tutor_id = a.final_tutor_id
                  WHERE a.final_tutor_id IS NOT NULL
                  ORDER BY l.id, tu.name, u.student_no
                 """);

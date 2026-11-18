@@ -136,6 +136,7 @@ public class WorkbenchService {
     public void saveScore(Long applicationId, java.math.BigDecimal score, String scoreDetail, String remark) {
         Long tutorId = tutorId();
         phaseService.require(PhaseService.INTERVIEW);
+        requireCurrentRound(applicationId);
         Long studentId = jdbc.queryForObject(
                 "SELECT student_id FROM applications WHERE id = ?", Long.class, applicationId);
         if (studentId == null) {
@@ -160,6 +161,7 @@ public class WorkbenchService {
     public void saveScores(Long applicationId, List<AiScoreReq.Item> items) {
         Long tutorId = tutorId();
         phaseService.require(PhaseService.INTERVIEW);
+        requireCurrentRound(applicationId);
         if (items == null || items.isEmpty()) {
             throw new BizException("缺少评分维度");
         }
@@ -226,6 +228,7 @@ public class WorkbenchService {
     public void decide(Long applicationId, int offerStatus, String remark) {
         Long tutorId = tutorId();
         phaseService.require(PhaseService.INTERVIEW);
+        requireCurrentRound(applicationId);
         Long studentId = jdbc.queryForObject(
                 "SELECT student_id FROM applications WHERE id = ?", Long.class, applicationId);
         if (studentId == null) {
@@ -387,12 +390,14 @@ public class WorkbenchService {
     }
 
     /**
-     * 室内调剂候选：本轮报过本室、至今未被任何导师录取、且服从实训室内调剂的学生。
+     * 室内调剂候选：报过本室、至今未被任何导师录取、且服从实训室内调剂的学生。
      * 已经持有待确认拟录取或递补资格的学生不在此列——他们并未落榜。
+     *
+     * <p>「报过本室」按任意一轮志愿判断（与 AdjustService 的室内优先匹配口径一致）；
+     * 登记行取该生最近一条未录取志愿。只按当前轮次过滤会漏掉「只在前几轮报过本室」的落榜生。</p>
      */
     public List<Map<String, Object>> labPool() {
         Long labId = labId();
-        int round = phaseService.currentRound();
         return jdbc.queryForList("""
                 SELECT u.id AS studentId, u.name AS studentName, u.student_no AS studentNo,
                        sp.major, sp.class_name AS className, sp.gpa, sp.priority_score AS priorityScore,
@@ -401,16 +406,21 @@ public class WorkbenchService {
                   FROM applications a
                   JOIN users u ON u.id = a.student_id
                   LEFT JOIN student_profiles sp ON sp.user_id = a.student_id
-                 WHERE a.final_tutor_id IS NULL
-                   AND a.round_no = ?
+                 WHERE a.id = (SELECT a2.id FROM applications a2
+                                WHERE a2.student_id = a.student_id AND a2.final_tutor_id IS NULL
+                                ORDER BY a2.round_no DESC, a2.id DESC LIMIT 1)
+                   AND a.final_tutor_id IS NULL
                    AND a.accept_lab_adjust = 1
+                   AND NOT EXISTS (SELECT 1 FROM applications m
+                                    WHERE m.student_id = a.student_id AND m.final_tutor_id IS NOT NULL)
                    AND NOT EXISTS (SELECT 1 FROM interview_results r
                                     WHERE r.student_id = a.student_id
                                       AND (r.offer_status = 2 OR (r.offer_status = 1 AND r.confirm_status = 0)))
-                   AND EXISTS (SELECT 1 FROM tutors t WHERE t.lab_id = ?
-                                AND (t.id = a.tutor_1_id OR t.id = a.tutor_2_id OR t.id = a.tutor_3_id))
+                   AND EXISTS (SELECT 1 FROM applications ap
+                                 JOIN tutors t ON t.id IN (ap.tutor_1_id, ap.tutor_2_id, ap.tutor_3_id)
+                                WHERE ap.student_id = a.student_id AND t.lab_id = ?)
                  ORDER BY sp.priority_score DESC, sp.gpa DESC
-                """, round, labId);
+                """, labId);
     }
 
     /** 本室可接收调剂的导师（还有剩余名额）。 */
@@ -430,6 +440,14 @@ public class WorkbenchService {
     public void labAdjust(Long studentId, Long tutorId, String reason) {
         Long labId = labId();
         phaseService.require(PhaseService.ADJUST);
+        if (studentId == null || tutorId == null) {
+            throw new BizException("请选择需要调剂的学生与接收导师");
+        }
+        Integer studentExists = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM users WHERE id = ? AND role = 'STUDENT'", Integer.class, studentId);
+        if (studentExists == null || studentExists == 0) {
+            throw new BizException("学生不存在");
+        }
         Tutor tutor = tutorMapper.selectById(tutorId);
         if (tutor == null || !labId.equals(tutor.getLabId())) {
             throw new BizException("只能调剂到本实训室的导师");
@@ -455,17 +473,26 @@ public class WorkbenchService {
         if (acceptLab == null || acceptLab == 0) {
             throw new BizException("该学生不服从实训室内调剂，不能在此安置");
         }
+        // 取最近一条未录取志愿；没有可用志愿行时直接拒绝，避免扣了名额却没有录取记录
+        List<Long> applicationIds = jdbc.queryForList("""
+                SELECT a.id FROM applications a
+                 WHERE a.student_id = ? AND a.final_tutor_id IS NULL
+                 ORDER BY a.round_no DESC, a.id DESC LIMIT 1
+                """, Long.class, studentId);
+        if (applicationIds.isEmpty()) {
+            throw new BizException("该学生没有可用的志愿记录，无法调剂");
+        }
+        Long applicationId = applicationIds.get(0);
         int rows = tutorMapper.takeQuota(tutorId);
         if (rows != 1) {
             throw new BizException("该导师名额已满");
         }
-        Long applicationId = jdbc.queryForObject("""
-                SELECT a.id FROM applications a
-                 WHERE a.student_id = ? AND a.final_tutor_id IS NULL
-                 ORDER BY a.round_no DESC LIMIT 1
-                """, Long.class, studentId);
-        jdbc.update("UPDATE applications SET final_tutor_id = ?, status = 'MATCHED' WHERE id = ?",
-                tutorId, applicationId);
+        int updated = jdbc.update(
+                "UPDATE applications SET final_tutor_id = ?, status = 'MATCHED' "
+                        + "WHERE id = ? AND final_tutor_id IS NULL", tutorId, applicationId);
+        if (updated != 1) {
+            throw new BizException("该学生已有录取记录，调剂失败");
+        }
 
         AdjustRecord record = new AdjustRecord();
         record.setRoundNo(phaseService.currentRound());
@@ -483,6 +510,7 @@ public class WorkbenchService {
     }
 
     private InterviewResult findOrCreate(Long applicationId, Long studentId, Long tutorId) {
+        int round = applicationRound(applicationId);
         InterviewResult result = resultMapper.selectOne(new QueryWrapper<InterviewResult>()
                 .eq("application_id", applicationId)
                 .eq("tutor_id", tutorId));
@@ -491,13 +519,48 @@ public class WorkbenchService {
             result.setApplicationId(applicationId);
             result.setStudentId(studentId);
             result.setTutorId(tutorId);
-            result.setRoundNo(phaseService.currentRound());
+            // 轮次必须取志愿所属轮次，不能取「管理员当前轮次」：
+            // 跨轮处置时后者会把记录挂到错误轮次，进而把录取结果写进错误的志愿行。
+            result.setRoundNo(round);
             result.setOfferStatus(0);
             result.setConfirmStatus(0);
             result.setVersion(0);
             resultMapper.insert(result);
+        } else if (result.getRoundNo() == null || result.getRoundNo() != round) {
+            // 历史数据自愈：已经挂错轮次的记录，在被再次处置时纠正回来
+            result.setRoundNo(round);
+            result.setVersion(result.getVersion() + 1);
+            resultMapper.updateById(result);
         }
         return result;
+    }
+
+    /** 志愿所属轮次，用于校验「不能跨轮处置」以及给面试记录定轮。 */
+    private int applicationRound(Long applicationId) {
+        if (applicationId == null) {
+            throw new BizException("志愿记录不存在");
+        }
+        List<Integer> rows = jdbc.queryForList(
+                "SELECT round_no FROM applications WHERE id = ?", Integer.class, applicationId);
+        if (rows.isEmpty() || rows.get(0) == null) {
+            throw new BizException("志愿记录不存在");
+        }
+        return rows.get(0);
+    }
+
+    /**
+     * 写操作只允许作用于当前轮次的志愿。
+     *
+     * <p>阶段门禁只能保证「当前处于某轮的面试/确认窗口」，无法阻止拿着上一轮的
+     * applicationId 直接调接口。跨轮处置会让面试记录、名额与录取结果错位，
+     * 因此这里以志愿轮次做二次校验。</p>
+     */
+    private void requireCurrentRound(Long applicationId) {
+        int round = applicationRound(applicationId);
+        int current = phaseService.currentRound();
+        if (round != current) {
+            throw new BizException("该志愿属于第 " + round + " 轮，当前为第 " + current + " 轮，不能跨轮处置");
+        }
     }
 
     /** 供阶段推进时清理过期提醒使用。 */

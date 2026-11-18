@@ -84,6 +84,11 @@
         当前不在「面试与初选」阶段，打分与处置已锁定，仅可查看名单。
       </template>
     </el-alert>
+    <el-alert v-else-if="!editable" :closable="false" type="warning" show-icon>
+      <template #title>
+        正在查看第 {{ round }} 轮历史名单，仅可查看；打分与处置只能作用于第 {{ store.currentRound }} 轮。
+      </template>
+    </el-alert>
 
     <el-card shadow="never" class="card card-pad">
       <div class="section-title">
@@ -143,7 +148,7 @@
         </el-table-column>
         <el-table-column label="操作" width="120" align="right">
           <template #default="{ row }">
-            <el-button size="small" type="primary" plain :disabled="!interviewOpen" @click="openDialog(row)">
+            <el-button size="small" type="primary" plain :disabled="!editable" @click="openDialog(row)">
               打分 / 处置
             </el-button>
           </template>
@@ -397,6 +402,15 @@ function resetDims() {
 }
 
 const interviewOpen = computed(() => store.phaseActive('INTERVIEW'))
+
+/**
+ * 只有「面试阶段开放」且「查看的是当前轮次」时才允许打分/处置。
+ * 后端对跨轮写操作会直接拒绝（面试记录与录取结果会挂错轮次），
+ * 这里提前禁用按钮，避免用户填完表单才看到报错。
+ */
+const editable = computed(
+  () => interviewOpen.value && Number(round.value) === Number(store.currentRound || 1)
+)
 
 /** AI 初评的前置条件：该学生已上传简历（列表里带 resumeName 即视为已上传） */
 const canReview = computed(() => Boolean(current.value?.resumeName))

@@ -31,9 +31,9 @@
         <div class="hint">含各轮与调剂</div>
       </div>
       <div class="stat">
-        <div class="label">未填报</div>
-        <div class="value mono">{{ rows.length - submitted }}</div>
-        <div class="hint">可提醒学生提交</div>
+        <div class="label">未录取</div>
+        <div class="value mono">{{ rows.length - matched }}</div>
+        <div class="hint">未填报 {{ notApplied }} · 往轮落选 {{ pastUnmatched }}</div>
       </div>
     </div>
 
@@ -59,9 +59,14 @@
             <el-tag size="small" :type="statusOf(row).type" effect="light">{{ statusOf(row).label }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="最终去向" min-width="200">
+        <el-table-column label="最终去向" min-width="220">
           <template #default="{ row }">
-            <span v-if="row.finalTutorName">{{ row.finalLabName }} · {{ row.finalTutorName }}</span>
+            <template v-if="row.finalTutorName">
+              <el-tag v-if="row.matchedRoundNo" size="small" effect="plain" class="round-tag">
+                第 {{ row.matchedRoundNo }} 轮
+              </el-tag>
+              {{ row.finalLabName }} · {{ row.finalTutorName }}
+            </template>
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
@@ -85,8 +90,14 @@ const rows = ref([])
 const keyword = ref('')
 const round = computed(() => store.currentRound || 1)
 
-const submitted = computed(() => rows.value.filter((r) => r.applicationId || r.finalTutorId).length)
-const matched = computed(() => rows.value.filter((r) => r.finalTutorId).length)
+// 后端返回的 matched / appliedThisRound 是 0/1，跨轮录取的学生依然算「已录取」
+const submitted = computed(() => rows.value.filter((r) => Number(r.appliedThisRound) === 1).length)
+const matched = computed(() => rows.value.filter((r) => Number(r.matched) === 1).length)
+// 完全没有志愿记录才算未填报；有志愿但未被录取的是「往轮落选」，不能混为一谈
+const notApplied = computed(() => rows.value.filter((r) => !r.applicationId).length)
+const pastUnmatched = computed(
+  () => rows.value.filter((r) => r.applicationId && Number(r.matched) !== 1 && Number(r.appliedThisRound) !== 1).length
+)
 
 const filtered = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -99,9 +110,9 @@ const filtered = computed(() => {
 })
 
 function statusOf(row) {
-  if (row.finalTutorId) return { label: '已录取', type: 'success' }
-  if (row.applicationStatus === 'MATCHED') return { label: '已录取', type: 'success' }
-  if (row.applicationId) return { label: '已填报', type: 'primary' }
+  if (Number(row.matched) === 1) return { label: '已录取', type: 'success' }
+  if (Number(row.appliedThisRound) === 1) return { label: '已填报', type: 'primary' }
+  if (row.applicationId) return { label: '往轮未录取', type: 'warning' }
   return { label: '未填报', type: 'info' }
 }
 
@@ -120,5 +131,9 @@ onMounted(load)
 <style scoped>
 .cell-name {
   font-weight: 500;
+}
+
+.round-tag {
+  margin-right: 6px;
 }
 </style>
