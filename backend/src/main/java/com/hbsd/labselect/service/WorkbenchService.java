@@ -435,11 +435,16 @@ public class WorkbenchService {
                 """, labId);
     }
 
-    /** 阶段 7 第一优先级：实训室内调剂。 */
+    /**
+     * 阶段 7 第一优先级：实训室内调剂。
+     *
+     * <p>室内调剂允许在每轮「面试与初选」阶段执行（解决本轮落榜生的即时安置），
+     * 也允许在「统筹调剂」阶段执行；全院跨室调剂仍只在统筹调剂阶段开放。</p>
+     */
     @Transactional
     public void labAdjust(Long studentId, Long tutorId, String reason) {
         Long labId = labId();
-        phaseService.require(PhaseService.ADJUST);
+        phaseService.require(PhaseService.ADJUST, PhaseService.INTERVIEW);
         if (studentId == null || tutorId == null) {
             throw new BizException("请选择需要调剂的学生与接收导师");
         }

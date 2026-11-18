@@ -3,13 +3,13 @@
     <div class="page-head">
       <div>
         <h2>室内调剂</h2>
-        <p>针对报过本实训室但未被录取、且服从实训室内调剂的学生，分配给本室仍有名额的导师。</p>
+        <p>针对报过本实训室但未被录取、且服从实训室内调剂的学生，分配给本室仍有名额的导师。每轮面试阶段与统筹调剂阶段均可操作。</p>
       </div>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
     </div>
 
     <el-alert v-if="!adjustOpen" :closable="false" type="info" show-icon>
-      <template #title>当前不在「统筹调剂」阶段，室内调剂暂不可操作。</template>
+      <template #title>当前不在「面试与初选」或「统筹调剂」阶段，室内调剂暂不可操作。</template>
     </el-alert>
 
     <div class="vacancy-row">
@@ -90,7 +90,8 @@ const pool = ref([])
 const vacancies = ref([])
 const picks = reactive({})
 
-const adjustOpen = computed(() => store.phaseActive('ADJUST'))
+// 室内调剂在每轮面试阶段与统筹调剂阶段都可执行（全院调剂仍只在统筹阶段）
+const adjustOpen = computed(() => store.phaseActive('ADJUST') || store.phaseActive('INTERVIEW'))
 
 async function load() {
   loading.value = true

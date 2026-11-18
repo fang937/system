@@ -3,20 +3,23 @@
     <div class="page-head">
       <div>
         <h2>统筹调剂</h2>
-        <p>三轮结束后仍未录取的学生进入调剂池，按「实训室内 → 全院跨室 → 人工兜底」三级顺序处理。</p>
+        <p>尚未录取的学生进入调剂池，按「实训室内 → 全院跨室 → 人工兜底」三级顺序处理；室内调剂在每轮面试阶段即可执行，全院与人工兜底在统筹调剂阶段开放。</p>
       </div>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
     </div>
 
-    <el-alert v-if="!adjustOpen" :closable="false" type="info" show-icon>
-      <template #title>当前不在「统筹调剂」阶段，自动与人工调剂均不可执行。</template>
+    <el-alert v-if="!indoorOpen" :closable="false" type="info" show-icon>
+      <template #title>当前不在「面试与初选」或「统筹调剂」阶段，调剂操作均不可执行。</template>
+    </el-alert>
+    <el-alert v-else-if="!globalOpen" :closable="false" type="info" show-icon>
+      <template #title>当前处于面试阶段：可执行实训室内调剂；全院调剂与人工兜底需等统筹调剂阶段开放。</template>
     </el-alert>
 
     <div class="stat-grid">
       <div class="stat">
         <div class="label">待调剂学生</div>
         <div class="value mono">{{ students.length }}</div>
-        <div class="hint">三轮后仍未录取</div>
+        <div class="hint">尚未录取</div>
       </div>
       <div class="stat">
         <div class="label">剩余名额</div>
@@ -40,10 +43,10 @@
         <h3>自动调剂</h3>
       </div>
       <div class="run-row">
-        <el-button type="primary" plain :disabled="!adjustOpen" :loading="running === 1" @click="run(1)">
+        <el-button type="primary" plain :disabled="!indoorOpen" :loading="running === 1" @click="run(1)">
           执行实训室内调剂
         </el-button>
-        <el-button type="primary" :disabled="!adjustOpen" :loading="running === 2" @click="run(2)">
+        <el-button type="primary" :disabled="!globalOpen" :loading="running === 2" @click="run(2)">
           执行全院调剂（含室内优先）
         </el-button>
         <span class="tiny">算法会为每个学生优先匹配其填报过的实训室，再退化为全院任意仍有名额的导师。</span>
@@ -97,7 +100,7 @@
         </el-table-column>
         <el-table-column label="操作" width="110" align="right">
           <template #default="{ row }">
-            <el-button size="small" type="primary" plain :disabled="!adjustOpen" @click="openManual(row)">
+            <el-button size="small" type="primary" plain :disabled="!globalOpen" @click="openManual(row)">
               人工分配
             </el-button>
           </template>
@@ -154,7 +157,9 @@ const dialogVisible = ref(false)
 const current = ref(null)
 const manual = reactive({ tutorId: null, reason: '' })
 
-const adjustOpen = computed(() => store.phaseActive('ADJUST'))
+// 室内调剂：每轮面试阶段即可执行；全院调剂与人工兜底：仅统筹调剂阶段
+const indoorOpen = computed(() => store.phaseActive('ADJUST') || store.phaseActive('INTERVIEW'))
+const globalOpen = computed(() => store.phaseActive('ADJUST'))
 const totalRemaining = computed(() => vacancies.value.reduce((sum, item) => sum + (item.remainingQuota || 0), 0))
 
 // 不服从任何调剂的学生：自动调剂不会处理，需管理员人工约谈分配

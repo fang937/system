@@ -8,9 +8,18 @@
       <el-tag v-if="stageLabel" size="large" effect="plain">{{ stageLabel }}</el-tag>
     </div>
 
-    <el-alert v-if="!editable" :closable="false" :type="hasApplication ? 'success' : 'warning'" show-icon>
+    <el-alert
+      v-if="!editable"
+      :closable="false"
+      :type="matched || hasApplication ? 'success' : 'warning'"
+      show-icon
+    >
       <template #title>
-        <template v-if="!applyWindow">
+        <template v-if="matched">
+          你已在第 {{ matchedInfo?.round }} 轮被「{{ matchedInfo?.labName }} · {{ matchedInfo?.tutorName }}」录取，
+          不能再填报或修改志愿。
+        </template>
+        <template v-else-if="!applyWindow">
           当前没有进行中的填报阶段，无法提交志愿。
         </template>
         <template v-else-if="applyState === 'PENDING'">
@@ -216,6 +225,9 @@ const saving = ref(false)
 const round = ref(store.currentRound || 1)
 const applyWindow = ref(null)
 const application = ref(null)
+// 跨轮录取信息：第 1 轮录取后，第 2/3 轮没有志愿行，必须用后端标记锁定填报
+const matched = ref(false)
+const matchedInfo = ref(null)
 const choices = ref([])
 const tutors = ref([])
 const selected = ref([])
@@ -256,7 +268,7 @@ const applyState = computed(() => {
 })
 
 const editable = computed(
-  () => applyState.value === 'ACTIVE' && application.value?.status !== 'MATCHED'
+  () => applyState.value === 'ACTIVE' && !matched.value && application.value?.status !== 'MATCHED'
 )
 
 const labs = computed(() => {
@@ -312,6 +324,10 @@ async function load() {
     round.value = app.round
     applyWindow.value = app.applyWindow
     application.value = app.application
+    matched.value = Boolean(app.matched)
+    matchedInfo.value = app.matched
+      ? { round: app.matchedRound, tutorName: app.matchedTutorName, labName: app.matchedLabName }
+      : null
     choices.value = app.choices || []
     tutors.value = list
     if (app.application) {

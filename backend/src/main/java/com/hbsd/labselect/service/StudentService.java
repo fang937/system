@@ -74,6 +74,21 @@ public class StudentService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("round", round);
         result.put("applyWindow", phaseService.phaseMap(phaseService.find(PhaseService.APPLY, round).orElse(null)));
+        // 跨轮录取状态：第 1 轮录取的学生在第 2/3 轮没有志愿行，
+        // 只按本轮判断会把页面误判成「未填报、可继续填报」。这里统一给出权威标记。
+        List<Map<String, Object>> matchedRows = jdbc.queryForList("""
+                SELECT a.round_no AS roundNo, u.name AS tutorName, l.name AS labName
+                  FROM applications a
+                  JOIN tutors t ON t.id = a.final_tutor_id
+                  JOIN users u  ON u.id = t.user_id
+                  JOIN labs l   ON l.id = t.lab_id
+                 WHERE a.student_id = ? AND a.final_tutor_id IS NOT NULL
+                 ORDER BY a.round_no DESC, a.id DESC LIMIT 1
+                """, studentId);
+        result.put("matched", !matchedRows.isEmpty());
+        result.put("matchedRound", matchedRows.isEmpty() ? null : matchedRows.get(0).get("roundNo"));
+        result.put("matchedTutorName", matchedRows.isEmpty() ? null : matchedRows.get(0).get("tutorName"));
+        result.put("matchedLabName", matchedRows.isEmpty() ? null : matchedRows.get(0).get("labName"));
         if (rows.isEmpty()) {
             result.put("application", null);
             result.put("choices", List.of());

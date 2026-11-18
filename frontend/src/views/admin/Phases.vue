@@ -33,6 +33,9 @@
           <div class="phase-main">
             <div class="phase-name">
               {{ phase.name }}
+              <el-tag v-if="activePhaseIds.has(phase.id)" size="small" type="success" effect="dark">
+                当前阶段
+              </el-tag>
               <el-tag size="small" :type="stateOf(phase.state).type" effect="light">
                 {{ stateOf(phase.state).label }}
               </el-tag>
@@ -72,7 +75,7 @@
           <div class="phase-main">
             <div class="phase-name">
               第 {{ phase.roundNo }} 轮填报
-              <el-tag v-if="phase.roundNo === round" size="small" type="primary" effect="plain">当前轮次</el-tag>
+              <el-tag v-if="activePhaseIds.has(phase.id)" size="small" type="success" effect="dark">当前阶段</el-tag>
               <el-tag size="small" :type="stateOf(phase.state).type" effect="light">
                 {{ stateOf(phase.state).label }}
               </el-tag>
@@ -107,7 +110,9 @@
             <div class="acc-head">
               <span class="acc-seq">{{ group.batch.seq }}</span>
               <span class="acc-name" :class="{ 'is-current': group.round === round }">{{ group.batch.name }}</span>
-              <el-tag v-if="group.round === round" size="small" type="primary" effect="plain">当前轮次</el-tag>
+              <el-tag v-if="activePhaseIds.has(group.batch.id)" size="small" type="success" effect="dark">
+                当前阶段
+              </el-tag>
               <el-tag size="small" :type="stateOf(group.batch.state).type" effect="light">
                 {{ stateOf(group.batch.state).label }}
               </el-tag>
@@ -146,6 +151,9 @@
               <div class="phase-main">
                 <div class="phase-name">
                   {{ phase.name }}
+                  <el-tag v-if="activePhaseIds.has(phase.id)" size="small" type="success" effect="dark">
+                    当前阶段
+                  </el-tag>
                   <el-tag size="small" :type="stateOf(phase.state).type" effect="light">
                     {{ stateOf(phase.state).label }}
                   </el-tag>
@@ -187,6 +195,9 @@
           <div class="phase-main">
             <div class="phase-name">
               {{ phase.name }}
+              <el-tag v-if="activePhaseIds.has(phase.id)" size="small" type="success" effect="dark">
+                当前阶段
+              </el-tag>
               <el-tag size="small" :type="stateOf(phase.state).type" effect="light">
                 {{ stateOf(phase.state).label }}
               </el-tag>
@@ -239,13 +250,13 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { api } from '../../api/index.js'
 import { useUserStore } from '../../stores/user.js'
 import SelectionTimeline from '../../components/SelectionTimeline.vue'
-import { countdown, fmtTime, isUrgent, phaseStateMap } from '../../utils/labels.js'
+import { countdown, fmtTime, isRoundScoped, isUrgent, phaseStateMap } from '../../utils/labels.js'
 
 const store = useUserStore()
 const loading = ref(false)
@@ -288,6 +299,24 @@ function stateOf(state) {
   return phaseStateMap[state] || { label: state, type: 'info' }
 }
 
+/**
+ * 「当前阶段」标记：只标注真正处于进行中的阶段。
+ *
+ * <p>不能用「当前轮次」做标记——统筹调剂/结果公示是全局阶段，round.current 仍停在 3，
+ * 把标签挂在第 N 轮填报上会让人误以为流程还停在填报；刷新前后 store 就绪时间不同，
+ * 标签还会跳到别的轮次。这里与后端 PhaseService.active 同口径：轮次阶段只认当前轮次，
+ * 全局阶段忽略轮次，只有 state=ACTIVE 的节点才带标记。</p>
+ */
+const activePhaseIds = computed(() => {
+  const ids = new Set()
+  phases.value.forEach((p) => {
+    if (p.state !== 'ACTIVE') return
+    if (isRoundScoped(p.code) && Number(p.roundNo) !== Number(round.value)) return
+    ids.add(p.id)
+  })
+  return ids
+})
+
 function toApi(date) {
   const d = new Date(date)
   const pad = (n) => String(n).padStart(2, '0')
@@ -297,13 +326,26 @@ function toApi(date) {
 async function load() {
   loading.value = true
   try {
-    phases.value = await api.phases()
-    round.value = store.currentRound || round.value
+    // 轮次以服务端快照为准：硬刷新时 store.phase 可能还没拉到，
+    // 直接用 store.currentRound 会让页面先停在「第 1 轮」，
+    // 表现为时间轴高亮和「当前轮次」标签乱跳。
+    const [list, snapshot] = await Promise.all([api.phases(), api.phase()])
+    phases.value = list
+    store.phase = snapshot
+    round.value = snapshot.round || 1
     if (!openRounds.value.length) openRounds.value = [round.value]
   } finally {
     loading.value = false
   }
 }
+
+// 顶栏/其他页面刷新阶段后，本页轮次随之同步，避免显示停留在旧轮次
+watch(
+  () => store.currentRound,
+  (value) => {
+    if (value && Number(value) !== Number(round.value)) round.value = value
+  }
+)
 
 function openEdit(phase) {
   current.value = phase

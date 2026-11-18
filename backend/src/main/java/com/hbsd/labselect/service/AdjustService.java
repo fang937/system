@@ -87,10 +87,17 @@ public class AdjustService {
     /**
      * 执行自动调剂。
      * scope = 1 仅室内；2 室内 + 全院；3 全部（等同 2，保留给后续扩展人工兜底）
+     *
+     * <p>室内调剂是实训室内部的日常动作，每轮「面试与初选」阶段即可执行；
+     * 全院跨实训室调剂只在收尾的「统筹调剂」阶段开放。</p>
      */
     @Transactional
     public Map<String, Object> run(int scope, Long operatorId) {
-        phaseService.require(PhaseService.ADJUST);
+        if (scope >= 2) {
+            phaseService.require(PhaseService.ADJUST);
+        } else {
+            phaseService.require(PhaseService.ADJUST, PhaseService.INTERVIEW);
+        }
         List<Map<String, Object>> students = unmatched();
         int labAdjusted = 0;
         int globalAdjusted = 0;
