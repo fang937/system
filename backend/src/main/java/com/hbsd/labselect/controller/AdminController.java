@@ -4,6 +4,7 @@ import com.hbsd.labselect.common.R;
 import com.hbsd.labselect.common.RequireRole;
 import com.hbsd.labselect.dto.ManualAdjustReq;
 import com.hbsd.labselect.dto.PhaseWindowReq;
+import com.hbsd.labselect.dto.StudentSaveReq;
 import com.hbsd.labselect.dto.TutorSaveReq;
 import com.hbsd.labselect.ocr.OcrProviderResolver;
 import com.hbsd.labselect.service.AdminService;
@@ -156,6 +157,33 @@ public class AdminController {
     @GetMapping("/students")
     public R<List<Map<String, Object>>> students() {
         return R.ok(adminService.students());
+    }
+
+    /** 录入学生：创建登录账号（账号=学号，初始密码 123456）与学生档案。 */
+    @PostMapping("/students")
+    public R<Void> createStudent(@RequestBody StudentSaveReq req) {
+        adminService.saveStudent(new StudentSaveReq(null, req.studentNo(), req.name(), req.major(),
+                req.className(), req.grade(), req.gpa(), req.skillTags(), req.priorityScore(),
+                req.phone(), req.email()));
+        return R.ok();
+    }
+
+    /** 修改学生信息；学号可调整，但必须保持全库唯一。 */
+    @PutMapping("/students/{id}")
+    public R<Void> updateStudent(@PathVariable Long id, @RequestBody StudentSaveReq req) {
+        adminService.saveStudent(new StudentSaveReq(id, req.studentNo(), req.name(), req.major(),
+                req.className(), req.grade(), req.gpa(), req.skillTags(), req.priorityScore(),
+                req.phone(), req.email()));
+        return R.ok();
+    }
+
+    /**
+     * 批量录入学生：请求体为数组，每个元素是一条学生记录（字段同单条录入）。
+     * 返回 total / successCount / failCount / items（逐条成功失败与原因）。
+     */
+    @PostMapping("/students/batch")
+    public R<Map<String, Object>> batchStudents(@RequestBody List<Map<String, Object>> rows) {
+        return R.ok(adminService.saveStudents(rows));
     }
 
     /* ---------- 统筹调剂 ---------- */

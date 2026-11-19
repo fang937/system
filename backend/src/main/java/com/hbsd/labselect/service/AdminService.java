@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.hbsd.labselect.common.BizException;
 import com.hbsd.labselect.common.UserContext;
 import com.hbsd.labselect.dto.PhaseWindowReq;
+import com.hbsd.labselect.dto.StudentSaveReq;
 import com.hbsd.labselect.dto.TutorSaveReq;
 import com.hbsd.labselect.entity.Lab;
 import com.hbsd.labselect.entity.SelectionPhase;
@@ -14,6 +15,7 @@ import com.hbsd.labselect.mapper.SelectionPhaseMapper;
 import com.hbsd.labselect.mapper.TutorMapper;
 import com.hbsd.labselect.mapper.UserMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Font;
@@ -28,21 +30,29 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 学院/系统管理员端：阶段时间轴、轮次流转、导师与实训室维护、全局看板、结果导出。
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AdminService {
 
     private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm");
+
+    /** 学生账号初始密码，与演示账号、导师账号保持同一口径。 */
+    private static final String DEFAULT_STUDENT_PASSWORD = "123456";
 
     private final JdbcTemplate jdbc;
     private final UserMapper userMapper;
@@ -632,6 +642,7 @@ public class AdminService {
         int round = phaseService.currentRound();
         return jdbc.queryForList("""
                 SELECT u.id AS studentId, u.username, u.name AS studentName, u.student_no AS studentNo,
+                       u.phone, u.email,
                        sp.major, sp.class_name AS className, sp.grade, sp.gpa,
                        sp.skill_tags AS skillTags, sp.priority_score AS priorityScore,
                        a.id AS applicationId, a.round_no AS appliedRoundNo,
@@ -654,6 +665,190 @@ public class AdminService {
                  WHERE u.role = 'STUDENT'
                  ORDER BY u.student_no
                 """, round, round);
+    }
+
+    /**
+     * 录入 / 修改学生信息。
+     *
+     * <p>新增时同时创建登录账号与学生档案：登录账号 = 学号，初始密码 123456，
+     * 学生可直接用自己的学号登录填报。修改时学号可调整，但仍须全库唯一。</p>
+     */
+    @Transactional
+    public void saveStudent(StudentSaveReq req) {
+        String studentNo = trimToNull(req.studentNo());
+        String name = trimToNull(req.name());
+        if (studentNo == null) {
+            throw new BizException("请填写学号");
+        }
+        if (!studentNo.matches("[A-Za-z0-9_-]{3,30}")) {
+            throw new BizException("学号只能包含字母、数字、下划线或短横线，长度 3~30 位");
+        }
+        if (name == null) {
+            throw new BizException("请填写姓名");
+        }
+        if (name.length() > 50) {
+            throw new BizException("姓名不能超过 50 个字符");
+        }
+        if (req.gpa() != null && (req.gpa().compareTo(BigDecimal.ZERO) < 0
+                || req.gpa().compareTo(new BigDecimal("4")) > 0)) {
+            throw new BizException("GPA 需在 0~4 之间");
+        }
+        if (req.priorityScore() != null && req.priorityScore().compareTo(BigDecimal.ZERO) < 0) {
+            throw new BizException("优先级权重不能为负数");
+        }
+        BigDecimal gpa = req.gpa();
+        BigDecimal priority = req.priorityScore() != null ? req.priorityScore()
+                : (gpa == null ? null : gpa.multiply(new BigDecimal("20")).setScale(2, java.math.RoundingMode.HALF_UP));
+
+        if (req.id() == null) {
+            Integer dup = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM users WHERE username = ? OR student_no = ?",
+                    Integer.class, studentNo, studentNo);
+            if (dup != null && dup > 0) {
+                throw new BizException("学号「" + studentNo + "」已存在，不能重复录入");
+            }
+            User user = new User();
+            user.setUsername(studentNo);
+            user.setName(name);
+            user.setRole("STUDENT");
+            user.setStudentNo(studentNo);
+            user.setPhone(trimToNull(req.phone()));
+            user.setEmail(trimToNull(req.email()));
+            user.setStatus(1);
+            user.setPassword(passwordEncoder.encode(DEFAULT_STUDENT_PASSWORD));
+            userMapper.insert(user);
+            insertProfile(user.getId(), req, priority);
+            return;
+        }
+
+        User user = userMapper.selectById(req.id());
+        if (user == null || !"STUDENT".equals(user.getRole())) {
+            throw new BizException("学生不存在");
+        }
+        if (!studentNo.equals(user.getStudentNo())) {
+            Integer dup = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM users WHERE id <> ? AND (username = ? OR student_no = ?)",
+                    Integer.class, user.getId(), studentNo, studentNo);
+            if (dup != null && dup > 0) {
+                throw new BizException("学号「" + studentNo + "」已被其他账号使用");
+            }
+        }
+        // 用显式 SQL 而非实体更新：清空手机/邮箱等字段时要能真正写入 NULL
+        jdbc.update("""
+                UPDATE users SET username = ?, student_no = ?, name = ?, phone = ?, email = ?
+                 WHERE id = ?
+                """, studentNo, studentNo, name, trimToNull(req.phone()), trimToNull(req.email()), user.getId());
+        if (jdbc.update("""
+                UPDATE student_profiles
+                   SET major = ?, class_name = ?, grade = ?, gpa = ?, skill_tags = ?, priority_score = ?
+                 WHERE user_id = ?
+                """, trimToNull(req.major()), trimToNull(req.className()), trimToNull(req.grade()),
+                gpa, trimToNull(req.skillTags()), priority, user.getId()) == 0) {
+            insertProfile(user.getId(), req, priority);
+        }
+    }
+
+    private void insertProfile(Long userId, StudentSaveReq req, BigDecimal priority) {
+        jdbc.update("""
+                INSERT INTO student_profiles (user_id, major, class_name, grade, gpa, skill_tags, priority_score)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, userId, trimToNull(req.major()), trimToNull(req.className()), trimToNull(req.grade()),
+                req.gpa(), trimToNull(req.skillTags()), priority);
+    }
+
+    /**
+     * 批量录入学生：逐条校验、逐条落库，返回每一条的成功 / 失败原因。
+     *
+     * <p>不做整体回滚——某一条格式错误或学号重复不影响其他学生录入；
+     * 前端按 row 展示失败清单，管理员修正后可只重提失败项。</p>
+     */
+    @Transactional
+    public Map<String, Object> saveStudents(List<Map<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) {
+            throw new BizException("请提供学生数据");
+        }
+        if (rows.size() > 500) {
+            throw new BizException("单次最多录入 500 名学生，请分批提交");
+        }
+        List<Map<String, Object>> items = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        int success = 0;
+        for (int i = 0; i < rows.size(); i++) {
+            Map<String, Object> row = rows.get(i);
+            int no = i + 1;
+            String studentNo = trimmed(row.get("studentNo"));
+            String name = trimmed(row.get("name"));
+            try {
+                if (studentNo == null) {
+                    throw new BizException("请填写学号");
+                }
+                if (name == null) {
+                    throw new BizException("请填写姓名");
+                }
+                if (!seen.add(studentNo)) {
+                    throw new BizException("学号「" + studentNo + "」在本批次中重复");
+                }
+                BigDecimal gpa = decimal(row.get("gpa"), "GPA");
+                BigDecimal priority = decimal(row.get("priorityScore"), "优先级权重");
+                saveStudent(new StudentSaveReq(null, studentNo, name, trimmed(row.get("major")),
+                        trimmed(row.get("className")), trimmed(row.get("grade")), gpa,
+                        trimmed(row.get("skillTags")), priority,
+                        trimmed(row.get("phone")), trimmed(row.get("email"))));
+                success++;
+                items.add(batchItem(no, studentNo, name, true, "录入成功"));
+            } catch (BizException e) {
+                items.add(batchItem(no, studentNo, name, false, e.getMessage()));
+            } catch (Exception e) {
+                log.warn("批量录入学生第 {} 条失败：{}", no, e.getMessage(), e);
+                items.add(batchItem(no, studentNo, name, false, "录入失败，请检查数据后重试"));
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("total", rows.size());
+        result.put("successCount", success);
+        result.put("failCount", rows.size() - success);
+        result.put("items", items);
+        return result;
+    }
+
+    private Map<String, Object> batchItem(int row, String studentNo, String name, boolean success, String message) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("row", row);
+        item.put("studentNo", studentNo);
+        item.put("name", name);
+        item.put("success", success);
+        item.put("message", message);
+        return item;
+    }
+
+    /** 批量录入的数值字段：空串按 null 处理，非数字给出带字段名的可读提示。 */
+    private BigDecimal decimal(Object value, String label) {
+        String raw = trimmed(value);
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return new BigDecimal(raw);
+        } catch (NumberFormatException e) {
+            throw new BizException(label + "「" + raw + "」不是有效数字");
+        }
+    }
+
+    /** 批量录入的文本字段：统一 trim，空串转 null（与 {@link #text(Object)} 的导出语义区分）。 */
+    private String trimmed(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String t = String.valueOf(value).trim();
+        return t.isEmpty() ? null : t;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     /* ---------------- 结果公示与导出 ---------------- */

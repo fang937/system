@@ -2,6 +2,7 @@ package com.hbsd.labselect.common;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -37,6 +38,21 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public R<Void> handleUploadSize(MaxUploadSizeExceededException e) {
         return R.fail(413, "文件超过大小限制，请压缩后重试（简历最大 10MB）");
+    }
+
+    /**
+     * 请求体格式错误：典型场景是数值字段传了非数字（如 GPA 填 "abc"）。
+     * 这是用户可预期的输入错误，返回 400 与可读提示，不能落到 500「系统繁忙」。
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public R<Void> handleUnreadable(HttpMessageNotReadableException e) {
+        log.info("请求体解析失败: {}", e.getMessage());
+        String msg = "请求数据格式有误";
+        String detail = e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : "";
+        if (detail != null && detail.contains("BigDecimal")) {
+            msg = "数值字段格式有误，请填写有效数字（GPA 需为 0~4 之间的数字）";
+        }
+        return R.fail(400, msg);
     }
 
     /**

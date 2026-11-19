@@ -17,7 +17,7 @@
 |---|---|---|---|
 | 学生端 | `STUDENT` | 学生端 | 导师与方向、3 个平行志愿、**简历上传与 AI 优化**、**AI 面试辅导**、Offer 确认、录取结果 |
 | 导师端 | `TUTOR` / `LAB_ADMIN` | **同一个工作台** | 导师可见「报考我的学生、面试打分、拟录取/递补/淘汰」；实训室管理员额外可见「本室进度、面试排期、室内调剂」 |
-| 管理员端 | `SYS_ADMIN` | 管理端 | 阶段与轮次、**重置整体流程**、导师与实训室、全局看板、统筹调剂、结果导出 |
+| 管理员端 | `SYS_ADMIN` | 管理端 | 阶段与轮次、**重置整体流程**、导师与实训室、**学生名册与批量录入**、全局看板、统筹调剂、结果导出 |
 
 说明：
 - 数据库保留 `STUDENT / TUTOR / LAB_ADMIN / SYS_ADMIN` 四种角色，**实训室负责人（`LAB_ADMIN`）与导师端合并为同一个入口**，菜单按 `caps` 渲染。
@@ -347,6 +347,9 @@ GET  /api/workbench/lab/progress|students|pool|vacancies
 POST /api/workbench/lab/adjust                  室内调剂
 
 GET  /api/admin/overview|phases|tutors|labs|students|results
+POST /api/admin/students                        录入学生（账号=学号，初始密码 123456）
+PUT  /api/admin/students/{id}                   修改学生信息
+POST /api/admin/students/batch                  批量录入，逐条返回成功/失败原因
 POST /api/admin/phases/reset                    重置整体流程到「宣讲」，清空志愿/面试/Offer 等
 PUT  /api/admin/phases/{id}                     改时间窗口
 POST /api/admin/phases/{id}/jump|close          立即进入 / 立即结束
