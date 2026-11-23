@@ -91,11 +91,17 @@
               </template>
             </el-table-column>
             <el-table-column prop="major" label="专业" min-width="140" />
+            <el-table-column label="轮次" width="80" align="center">
+              <template #default="{ row }">第 {{ row.roundNo }} 轮</template>
+            </el-table-column>
             <el-table-column prop="tutorName" label="导师" width="110" />
             <el-table-column prop="score" label="成绩" width="80" align="center" />
             <el-table-column label="状态" width="120" align="center">
               <template #default="{ row }">
-                <el-tag :type="statusOf(row.offerStatus).type" size="small" effect="light">
+                <el-tag v-if="row.confirmStatus === 1" type="success" size="small" effect="light">
+                  已录取
+                </el-tag>
+                <el-tag v-else :type="statusOf(row.offerStatus).type" size="small" effect="light">
                   {{ statusOf(row.offerStatus).label }}
                 </el-tag>
               </template>

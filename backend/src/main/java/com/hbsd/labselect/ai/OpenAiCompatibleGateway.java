@@ -41,8 +41,12 @@ public class OpenAiCompatibleGateway implements AiGateway {
             {"summary":{"headline":"一句话画像","suggestedTotal":0,"recommendation":"一句话建议"},
              "highlights":["亮点"],"risks":["需核实的风险"],
              "suggestedQuestions":[{"question":"建议提问","intent":"想验证什么","outline":["关注点"]}],
+             "resumeSections":[{"code":"BASIC|SKILLS|PROJECTS|EDUCATION|PRACTICE|SUMMARY","name":"版块名",
+              "weight":10,"score":0,"comment":"该版块评价","evidence":"简历原文依据"}],
              "dimensions":[{"code":"维度编码","name":"维度名","weight":25,"score":0,"reason":"打分依据","confidence":"LOW|MEDIUM|HIGH"}]}
             要求：dimensions 必须覆盖输入 rubric 中的全部维度，code 与 weight 原样保留，score 为 0-100 的整数；
+            resumeSections 必须覆盖 resumeTemplate 的全部 code，weight 原样保留，score 为 0-100 的整数；
+            evidence 必须是 resume.text 中的原文短句，不得编造；找不到依据时 score 下调并在 comment 说明；
             suggestedTotal 为按权重折算的总分；confidence 表示该维度仅凭档案推断的把握程度。""";
 
     private static final String SCHEMA_AVATAR = """
@@ -290,14 +294,26 @@ public class OpenAiCompatibleGateway implements AiGateway {
     public Map<String, Object> resumeReview(Map<String, Object> input) {
         Map<String, Object> data = complete(
                 "对学生简历与档案做初评，并给出多维评分建议。评分必须贴合评分标准的行为锚点。"
+                        + "简历按 resumeTemplate 的六个版块逐项打分：BASIC 基本信息、SKILLS 专业技能、"
+                        + "PROJECTS 项目经历、EDUCATION 教育背景、PRACTICE 实践荣誉、SUMMARY 自我评价；"
+                        + "项目经历重点看是否写清「做了什么、怎么做、量化结果、个人职责」，"
+                        + "专业技能重点看分类与深度，自我评价重点看是否有技术分享等可佐证内容。"
                         + "resume.text 是简历正文（来自 PDF 文本层或 PaddleOCR，可能有识别噪声）："
-                        + "有正文时必须引用其中的项目、技能、成果作为依据，并在 reason 里指出出处；"
+                        + "有正文时必须引用其中的项目、技能、成果作为依据，resumeSections.evidence 必须是原文短句；"
                         + "正文为空时只能按档案推断，不得虚构简历内容，相关维度要下调 confidence。",
                 SCHEMA_REVIEW, input);
         data.putIfAbsent("summary", new LinkedHashMap<>());
         data.putIfAbsent("highlights", new ArrayList<>());
         data.putIfAbsent("risks", new ArrayList<>());
         data.put("suggestedQuestions", normalizeQuestions(data.get("suggestedQuestions")));
+        List<Map<String, Object>> sections = new ArrayList<>();
+        for (Map<String, Object> item : asObjects(data.get("resumeSections"))) {
+            Map<String, Object> row = new LinkedHashMap<>(item);
+            row.put("score", intOf(row.get("score")));
+            row.put("weight", intOf(row.get("weight")));
+            sections.add(row);
+        }
+        data.put("resumeSections", sections);
         List<Map<String, Object>> dimensions = new ArrayList<>();
         for (Map<String, Object> item : asObjects(data.get("dimensions"))) {
             Map<String, Object> row = new LinkedHashMap<>(item);

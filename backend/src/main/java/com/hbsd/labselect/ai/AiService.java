@@ -47,6 +47,25 @@ public class AiService {
     private final ResumeDraftService resumeDraftService;
     private final NotifyService notifyService;
 
+    /**
+     * 简历评分模板：对齐标准简历（《吴玮_Android 开发工程师》）的版块结构。
+     * 权重合计 100，AI 初评的 resumeSections 必须按这六块逐项给分。
+     */
+    private static final List<Map<String, Object>> RESUME_TEMPLATE = List.of(
+            Map.of("code", "BASIC", "name", "基本信息与求职意向", "weight", 10,
+                    "hint", "姓名、电话、邮箱、目标岗位、届别、主页是否完整可联系"),
+            Map.of("code", "SKILLS", "name", "专业技能", "weight", 30,
+                    "hint", "技能是否分类清晰、有深度、与报考方向匹配"),
+            Map.of("code", "PROJECTS", "name", "项目经历", "weight", 30,
+                    "hint", "项目介绍、技术攻关、量化结果、个人职责是否写清"),
+            Map.of("code", "EDUCATION", "name", "教育背景", "weight", 10,
+                    "hint", "学校、专业、学历、起止时间是否完整"),
+            Map.of("code", "PRACTICE", "name", "社会实践与荣誉", "weight", 10,
+                    "hint", "竞赛、项目获奖、组织经历是否有佐证"),
+            Map.of("code", "SUMMARY", "name", "自我评价与表达", "weight", 10,
+                    "hint", "自我认知、技术分享、综合素质表达是否具体")
+    );
+
     /* ---------------- 评分标准 ---------------- */
 
     /** 评分标准：维度、权重、行为锚点。前端打分面板与 AI 建议共用同一份数据。 */
@@ -694,9 +713,12 @@ public class AiService {
             throw new BizException(400, "该学生尚未上传简历，无法进行 AI 初评");
         }
         ResumeTextService.Extract extract = resumeTextService.extract(studentId);
-        if (extract.hasText()) {
-            resume.put("text", truncate(extract.text(), 4000));
+        // 只上传了文件但解析不出正文（空文件、扫描件未配 OCR）同样不允许初评，
+        // 否则模型只能按档案猜测，等于「没填简历也能打分」。
+        if (!extract.hasText()) {
+            throw new BizException(400, "简历未解析出正文，无法进行 AI 初评。请上传带文本层的 PDF / DOCX，或配置 OCR 后重试");
         }
+        resume.put("text", truncate(extract.text(), 4000));
         resume.put("textEngine", extract.engine());
         resume.put("textChars", extract.chars());
 
@@ -705,6 +727,7 @@ public class AiService {
         input.put("application", application);
         input.put("tutor", tutorById(tutorId));
         input.put("rubric", rubric());
+        input.put("resumeTemplate", RESUME_TEMPLATE);
         input.put("resume", resume);
 
         Map<String, Object> data = gateway.resumeReview(input);

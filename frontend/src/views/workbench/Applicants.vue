@@ -229,6 +229,24 @@
             </span>
           </div>
 
+          <template v-if="(review.resumeSections || []).length">
+            <div class="ai-section-title">简历版块评分（标准模板）</div>
+            <div class="section-scores">
+              <div v-for="item in review.resumeSections" :key="item.code" class="section-score">
+                <div class="section-score-head">
+                  <span class="section-score-name">{{ item.name }}</span>
+                  <span class="section-score-value">{{ item.score }}<small>/100</small></span>
+                </div>
+                <div class="section-score-bar">
+                  <i :style="{ width: Math.max(0, Math.min(100, Number(item.score) || 0)) + '%' }" />
+                </div>
+                <div class="tiny section-score-note">
+                  {{ item.comment }}<template v-if="item.evidence"> · 依据：{{ item.evidence }}</template>
+                </div>
+              </div>
+            </div>
+          </template>
+
           <template v-if="(review.resumeTags || []).length">
             <div class="ai-section-title">简历技能标签（{{ review.resumeTags.length }} 项）</div>
             <div class="skill-cloud">
@@ -901,6 +919,72 @@ onUnmounted(stopReviewClock)
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 8px;
+}
+
+/* 简历版块评分：标准模板六块 */
+.section-scores {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin-top: 8px;
+}
+
+.section-score {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--fill-1, rgba(120, 120, 128, 0.06));
+}
+
+.section-score-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.section-score-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-1);
+}
+
+.section-score-value {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ios-blue);
+}
+
+.section-score-value small {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--label-3);
+}
+
+.section-score-bar {
+  height: 5px;
+  margin: 6px 0 5px;
+  border-radius: 999px;
+  background: rgba(120, 120, 128, 0.16);
+  overflow: hidden;
+}
+
+.section-score-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4fc0b2, #2f9d92);
+}
+
+.section-score-note {
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+@media (max-width: 900px) {
+  .section-scores {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .skill-pill {

@@ -203,6 +203,7 @@ public class MockAiGateway implements AiGateway {
         boolean resumeUploaded = Boolean.TRUE.equals(resume.get("uploaded"));
         String resumeText = str(resume, "text");
         List<String> resumeKeywords = resumeKeywords(resumeText);
+        List<Map<String, Object>> resumeSections = resumeSections(resumeText, resumeKeywords);
 
         Map<String, Integer> scores = new LinkedHashMap<>();
         scores.put("MAJOR", clamp((int) Math.round(gpa / 4.0 * 100)));
@@ -286,9 +287,92 @@ public class MockAiGateway implements AiGateway {
         data.put("highlights", highlights);
         data.put("risks", risks);
         data.put("suggestedQuestions", questions);
+        data.put("resumeSections", resumeSections);
         data.put("dimensions", dimensions);
         data.put("disclaimer", "以上为基于档案的规则初评，仅作面试提问与打分参考，不能替代导师判断。");
         return data;
+    }
+
+    /**
+     * 按标准简历模板（基本信息 / 专业技能 / 项目经历 / 教育背景 / 实践荣誉 / 自我评价）
+     * 对正文做规则打分。没有模型时也能给导师一个「简历写到什么程度」的结构化视图。
+     */
+    private List<Map<String, Object>> resumeSections(String text, List<String> keywords) {
+        String t = text == null ? "" : text;
+        boolean blank = t.isBlank();
+        List<Map<String, Object>> list = new ArrayList<>();
+
+        int basic = blank ? 0 : (t.contains("@") && t.matches("(?s).*\\d{7,}.*") ? 85 : 65);
+        int skills = blank ? 0 : clamp(55 + Math.min(35, keywords.size() * 3)
+                + (containsAny(t, "精通", "熟练", "深入") ? 5 : 0));
+        int digits = countAny(t, "提升", "降低", "优化", "从 ", "%", "ms", "倍");
+        int projects = blank ? 0 : clamp(55 + Math.min(25, countWord(t, "项目") * 5)
+                + Math.min(10, digits * 2) + (containsAny(t, "负责", "主导", "独立") ? 5 : 0));
+        int education = blank ? 0 : (containsAny(t, "大学", "学院", "学校") ? 80 : 55);
+        int practice = blank ? 0 : (containsAny(t, "奖", "荣誉", "班长", "社团", "竞赛") ? 80 : 60);
+        int summary = blank ? 0 : (containsAny(t, "自我评价", "沟通", "学习", "热爱", "分享") ? 75 : 60);
+
+        list.add(section("BASIC", "基本信息与求职意向", 10, basic,
+                blank ? "未解析到正文" : "联系方式 / 求职意向", evidenceOf(t, "@", "电话", "邮箱")));
+        list.add(section("SKILLS", "专业技能", 30, skills,
+                blank ? "未解析到正文" : "识别到 " + keywords.size() + " 项技能关键词", evidenceOf(t, "技能", "熟悉", "掌握")));
+        list.add(section("PROJECTS", "项目经历", 30, projects,
+                blank ? "未解析到正文" : (digits > 0 ? "项目描述含量化结果" : "项目描述缺少量化结果"),
+                evidenceOf(t, "项目", "负责", "优化")));
+        list.add(section("EDUCATION", "教育背景", 10, education,
+                blank ? "未解析到正文" : "学校 / 专业 / 学历", evidenceOf(t, "大学", "学院", "专业")));
+        list.add(section("PRACTICE", "社会实践与荣誉", 10, practice,
+                blank ? "未解析到正文" : "竞赛 / 荣誉 / 组织经历", evidenceOf(t, "奖", "荣誉", "班长")));
+        list.add(section("SUMMARY", "自我评价与表达", 10, summary,
+                blank ? "未解析到正文" : "自我认知 / 技术分享", evidenceOf(t, "自我评价", "沟通", "分享")));
+        return list;
+    }
+
+    private Map<String, Object> section(String code, String name, int weight, int score, String comment, String evidence) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("code", code);
+        row.put("name", name);
+        row.put("weight", weight);
+        row.put("score", score);
+        row.put("comment", comment);
+        row.put("evidence", evidence);
+        return row;
+    }
+
+    /** 取包含关键词的原文片段作为依据；没有则回退为字数说明。 */
+    private String evidenceOf(String text, String... keywords) {
+        if (text == null || text.isBlank()) {
+            return "未解析到正文";
+        }
+        for (String keyword : keywords) {
+            int index = text.indexOf(keyword);
+            if (index >= 0) {
+                int start = Math.max(0, index - 12);
+                int end = Math.min(text.length(), index + 28);
+                return text.substring(start, end).replaceAll("\\s+", " ").trim();
+            }
+        }
+        return "正文 " + text.length() + " 字，未定位到对应版块关键词";
+    }
+
+    private int countWord(String text, String word) {
+        int count = 0;
+        int index = 0;
+        while ((index = text.indexOf(word, index)) >= 0) {
+            count++;
+            index += word.length();
+        }
+        return count;
+    }
+
+    private int countAny(String text, String... words) {
+        int count = 0;
+        for (String word : words) {
+            if (text.contains(word)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /* ---------------- 学生端：导师 AI 分身 ---------------- */

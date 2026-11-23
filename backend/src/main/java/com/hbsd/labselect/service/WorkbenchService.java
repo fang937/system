@@ -238,7 +238,7 @@ public class WorkbenchService {
         offerService.decide(result.getId(), offerStatus, tutorId, remark);
     }
 
-    /** 我发出的 Offer 及学生确认状态。 */
+    /** 我发出的 Offer 及学生确认状态（含更早轮次已确认录取的学生）。 */
     public List<Map<String, Object>> myOffers(Integer roundNo) {
         Long tutorId = tutorId();
         int round = roundNo == null ? phaseService.currentRound() : roundNo;
@@ -252,8 +252,10 @@ public class WorkbenchService {
                   FROM interview_results r
                   JOIN users u ON u.id = r.student_id
                   LEFT JOIN student_profiles sp ON sp.user_id = r.student_id
-                 WHERE r.tutor_id = ? AND r.round_no = ? AND r.offer_status IN (1, 2, 3)
-                 ORDER BY r.offer_status, r.reserve_rank, r.id
+                 WHERE r.tutor_id = ?
+                   AND (r.round_no = ? OR (r.offer_status = 1 AND r.confirm_status = 1))
+                   AND r.offer_status IN (1, 2, 3)
+                 ORDER BY r.round_no DESC, r.offer_status, r.reserve_rank, r.id
                 """, tutorId, round);
     }
 
@@ -369,14 +371,19 @@ public class WorkbenchService {
                 """, labId, round, labId, round, labId);
     }
 
-    /** 本室学生去向（已发 Offer / 已确认 / 递补）。 */
+    /**
+     * 本室学生去向（已发 Offer / 已确认 / 递补）。
+     *
+     * <p>除了本轮的面试结果，还要带上「更早轮次已确认录取」的学生——
+     * 第 1 轮录取的学生在第 2/3 轮没有新的面试记录，只按本轮过滤会让室管以为人不见了。</p>
+     */
     public List<Map<String, Object>> labStudents(Integer roundNo) {
         Long labId = labId();
         int round = roundNo == null ? phaseService.currentRound() : roundNo;
         return jdbc.queryForList("""
                 SELECT u.id AS studentId, u.name AS studentName, u.student_no AS studentNo,
                        sp.major, sp.class_name AS className, sp.gpa,
-                       tu.name AS tutorName, t.title,
+                       tu.name AS tutorName, t.title, r.round_no AS roundNo,
                        r.score, r.offer_status AS offerStatus, r.confirm_status AS confirmStatus,
                        r.reserve_rank AS reserveRank
                   FROM interview_results r
@@ -384,8 +391,10 @@ public class WorkbenchService {
                   JOIN users tu ON tu.id = t.user_id
                   JOIN users u  ON u.id = r.student_id
                   LEFT JOIN student_profiles sp ON sp.user_id = r.student_id
-                 WHERE t.lab_id = ? AND r.round_no = ? AND r.offer_status IN (1, 2, 3)
-                 ORDER BY r.offer_status, r.confirm_status, r.score DESC
+                 WHERE t.lab_id = ?
+                   AND ((r.round_no = ? AND r.offer_status IN (1, 2, 3))
+                        OR (r.offer_status = 1 AND r.confirm_status = 1))
+                 ORDER BY r.round_no, r.offer_status, r.confirm_status, r.score DESC
                 """, labId, round);
     }
 

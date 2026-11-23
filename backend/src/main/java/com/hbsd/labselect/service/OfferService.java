@@ -231,19 +231,43 @@ public class OfferService {
                 .eq("offer_status", 2)
                 .orderByAsc("reserve_rank"));
         for (InterviewResult reserve : reserves) {
+            // 已经落实去向的学生不再占用递补名额
+            Long matched = applicationMapper.selectCount(new QueryWrapper<Application>()
+                    .eq("student_id", reserve.getStudentId())
+                    .isNotNull("final_tutor_id"));
+            if (matched != null && matched > 0) {
+                continue;
+            }
             int rows = tutorMapper.takeQuota(tutorId);
             if (rows != 1) {
                 return;
             }
+            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime deadline = phaseService.confirmDeadline(roundNo, fallbackHours);
+            boolean canConfirm = deadline != null && deadline.isAfter(now);
             reserve.setOfferStatus(1);
-            reserve.setConfirmStatus(0);
-            reserve.setOfferTime(LocalDateTime.now());
-            reserve.setConfirmDeadline(phaseService.confirmDeadline(roundNo, fallbackHours));
             reserve.setReserveRank(null);
+            reserve.setOfferTime(now);
+            if (canConfirm) {
+                reserve.setConfirmStatus(0);
+                reserve.setConfirmDeadline(deadline);
+            } else {
+                // 确认窗口已关闭（超时递补、调剂阶段补位）：没有窗口再让学生点确认，
+                // 直接按自动确认落定，否则名额悬空、学生端与公示里都查不到录取结果。
+                reserve.setConfirmStatus(1);
+                reserve.setConfirmTime(now);
+                reserve.setConfirmDeadline(null);
+            }
             reserve.setVersion(reserve.getVersion() + 1);
             resultMapper.updateById(reserve);
+            if (!canConfirm) {
+                markApplicationMatched(reserve);
+            }
             notifyService.send(reserve.getStudentId(), "OFFER", "递补成功，收到拟录取 Offer",
-                    "你已由递补顺延为拟录取，请在确认阶段内完成确认，逾期视为放弃。", "OFFER", reserve.getId());
+                    canConfirm
+                            ? "你已由递补顺延为拟录取，请在确认阶段内完成确认，逾期视为放弃。"
+                            : "你已由递补顺延为拟录取；本轮确认阶段已结束，系统已自动确认录取。",
+                    "OFFER", reserve.getId());
             return;
         }
     }

@@ -104,8 +104,26 @@
           </div>
           <div v-if="!notices.length" class="notify-empty">暂无通知</div>
           <div class="notify-list">
-            <div v-for="n in notices" :key="n.id" class="notify-item" :class="{ unread: !n.isRead }">
-              <div class="notify-title">{{ n.title }}</div>
+            <div
+              v-for="n in notices"
+              :key="n.id"
+              class="notify-item"
+              :class="{ unread: !n.isRead }"
+              @click="readOne(n)"
+            >
+              <div class="notify-title">
+                {{ n.title }}
+                <el-button
+                  v-if="!n.isRead"
+                  link
+                  type="primary"
+                  size="small"
+                  class="notify-read"
+                  @click.stop="readOne(n)"
+                >
+                  标为已读
+                </el-button>
+              </div>
               <div class="notify-body">{{ n.content }}</div>
               <div class="notify-time">{{ n.createdAt }}</div>
             </div>
@@ -301,6 +319,17 @@ function onVisibilityChange() {
 async function readAll() {
   await api.readAllNotifications()
   await loadNotices()
+}
+
+/** 单条已读：点击通知或「标为已读」都走这里，不再只能全部已读 */
+async function readOne(item) {
+  if (!item || item.isRead) return
+  try {
+    await api.readNotification(item.id)
+    item.isRead = 1
+  } catch {
+    /* 失败时保留未读态，拦截器已提示 */
+  }
 }
 
 function onCommand(command) {
@@ -844,10 +873,32 @@ onBeforeUnmount(() => {
 .notify-item {
   padding: 10px 4px;
   border-top: 1px solid var(--separator);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.2s ease;
+}
+
+.notify-item:hover {
+  background: rgba(47, 157, 146, 0.06);
 }
 
 .notify-item:first-child {
   border-top: none;
+}
+
+/* 未读圆点由 ::before 伪元素生成，也是 flex 子项；
+   若用 space-between 会把标题文字挤到中间并与「标为已读」重叠，
+   这里改为固定间距 + 按钮 auto 外边距靠右。 */
+.notify-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notify-read {
+  flex: none;
+  margin-left: auto;
+  font-size: 11.5px;
 }
 
 .notify-empty {
